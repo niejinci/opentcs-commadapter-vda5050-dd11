@@ -225,4 +225,7 @@ public interface ObjectProperties {
    * Default orientation deviation for this point.
    */
   String PROPKEY_POINT_DEVIATION_THETA = PROPKEY_VEHICLE_DEVIATION_THETA;
+
+  String PROPKEY_PATH_ORIENTATION_TYPE_FORWARD = "vda5050:orientationType.forward";
+  String PROPKEY_PATH_ORIENTATION_TYPE_REVERSE = "vda5050:orientationType.reverse";
 }

@@ -10,6 +10,8 @@ import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROP
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_REVERSE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ROTATION_ALLOWED_FORWARD;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ROTATION_ALLOWED_REVERSE;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_TYPE_FORWARD;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_TYPE_REVERSE;
 
 import java.util.List;
 import javax.annotation.Nonnull;
@@ -60,6 +62,7 @@ public class EdgeMapping {
     edge.setMaxSpeed(maxSpeed(step));
     edge.setOrientation(edgeOrientation(step));
     edge.setRotationAllowed(rotationAllowed(step));
+    edge.setOrientationType(edgeOrientationType(step));
 
     return edge;
   }
@@ -87,6 +90,7 @@ public class EdgeMapping {
     edge.setMaxSpeed(maxSpeed(step));
     edge.setOrientation(edgeOrientation(step));
     edge.setRotationAllowed(rotationAllowed(step));
+    edge.setOrientationType(edgeOrientationType(step));
 
     return edge;
   }
@@ -126,6 +130,16 @@ public class EdgeMapping {
       return getProperty(PROPKEY_PATH_ROTATION_ALLOWED_FORWARD, step.getPath())
           .map(value -> Boolean.valueOf(value))
           .orElse(null);
+    }
+  }
+
+  @Nullable
+  private static String edgeOrientationType(Route.Step step) {
+    if (step.getVehicleOrientation() == Vehicle.Orientation.BACKWARD) {
+      return getProperty(PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, step.getPath()).orElse(null);
+    }
+    else {
+      return getProperty(PROPKEY_PATH_ORIENTATION_TYPE_FORWARD, step.getPath()).orElse(null);
     }
   }
 }

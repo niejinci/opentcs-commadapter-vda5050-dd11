@@ -85,6 +85,10 @@ public class Edge
    */
   private Double orientation;
   /**
+   * [Optional] "GLOBAL" or "TANGENTIAL"
+   */
+  private String orientationType;
+  /**
    * [Optional] Sets direction at junctions for line-guided vehicles, to be defined initially
    * (vehicle-individual).
    * <p>
@@ -255,6 +259,15 @@ public class Edge
     return this;
   }
 
+  public String getOrientationType() {
+    return orientationType;
+  }
+
+  public Edge setOrientationType(String orientationType) {
+    this.orientationType = orientationType;
+    return this;
+  }
+
   public String getDirection() {
     return direction;
   }
@@ -330,6 +343,7 @@ public class Edge
         + ", length=" + length
         + ", trajectory=" + trajectory
         + ", actions=" + actions
+        + ", orientationType=" + orientationType
         + '}';
   }
 
