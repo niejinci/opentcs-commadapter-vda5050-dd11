@@ -4,7 +4,7 @@
     "documentVersion": "5.0.0",
     "subtopic": "/state",
     "type": "object",
-    "additionalProperties": false,
+    "additionalProperties": true,
     "properties": {
         "headerId": {
             "type": "integer"
