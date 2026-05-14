@@ -797,7 +797,7 @@ public class CommAdapterImpl
     // set header for message object
     messageObject.setHeaderId(headerId);
     messageObject.setTimestamp(Instant.now());
-    messageObject.setVersion(VERSION_MAJOR + "." + VERSION_MINOR + "." + VERSION_PATCH);
+    messageObject.setVersion(VERSION_MAJOR + "." + VERSION_MINOR + "." + VERSION_PATCH);    // 发给小车的报文头里面的 version 固定写死了为 2.0.0
     messageObject.setManufacturer(mqttSetting.vehicleManufacturer());
     messageObject.setSerialNumber(mqttSetting.vehicleSerialNumber());
     try {
