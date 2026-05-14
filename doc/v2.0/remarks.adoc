@@ -28,3 +28,18 @@ toc::[]
 * The vehicle is expected to reflect every instant action in its `actionStates` list.
   Not doing so effectively leads to the driver repeating the instant action message infinitely, blocking all other order or instant action messages.
   For details regarding instant actions, see the 'instantActions' topic reference in xref:runtime-behaviour.adoc#topic-instantactions[].
+
+---
+
+= 一般实现备注
+
+* openTCS 驱动程序是基于作为最终规范的 VDA5050 2.0 PDF 文档实现的，而不是基于在 https://github.com/vda5050 上可以找到的文档。
+* 在以下情况下，来自车辆的消息可能会被忽略：
+** 如果车辆的 `connection` 主题表明该车辆处于离线状态。
+** 如果消息被认为是过时的，即它包含的时间戳早于同一主题上最后接受的消息的时间戳。
+* 如果车辆拒绝了订单，openTCS 驱动程序不会向其发送进一步的消息。
+  在向车辆发送任何新消息之前，必须在 openTCS 中（强制）撤回车辆当前的运输订单。
+  有关订单拒绝的详细信息，请参阅 xref:runtime-behaviour.adoc#topic-order[] 中的 'order' 主题参考。
+* 期望车辆在其 `actionStates` 列表中反映每一个即时动作 (instant action)。
+  如果不这样做，实际上会导致驱动程序无限循环地重复发送即时动作消息，从而阻塞所有其他订单或即时动作消息。
+  有关即时动作的详细信息，请参阅 xref:runtime-behaviour.adoc#topic-instantactions[] 中的 'instantActions' 主题参考。

@@ -1,0 +1,405 @@
+// SPDX-FileCopyrightText: The openTCS Authors
+// SPDX-License-Identifier: CC-BY-4.0
+
+:doctype: book
+:toc: macro
+:toclevels: 6
+:sectnums: all
+:sectnumlevels: 6
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+toc::[]
+
+= VDA5050 2.0 驱动程序运行时行为
+
+== 主题 (Topics)
+
+驱动程序将根据从工厂模型 (plant model) 中的车辆元素读取的配置属性值，使用 VDA5050 建议的以下主题前缀：
+
+----
+<interfaceName>/<majorVersion>/<manufacturer>/<serialNumber>
+----
+
+由于该驱动程序实现了 VDA5050 规范的 2.0 版本，因此 `<majorVersion>` 始终为 `v2`。
+因此，如果车辆属性值设置如下：
+
+* `vda5050:interfaceName`: `uagv`
+* `vda5050:manufacturer`: `Some_Company`
+* `vda5050:serialNumber`: `AGV-XY-1234`
+
+则驱动程序将发布或订阅以下主题：
+
+* `uagv/v2/Some_Company/AGV-XY-1234/order` (发布到)
+* `uagv/v2/Some_Company/AGV-XY-1234/instantActions` (发布到)
+* `uagv/v2/Some_Company/AGV-XY-1234/state` (订阅)
+* `uagv/v2/Some_Company/AGV-XY-1234/visualization` (订阅)
+* `uagv/v2/Some_Company/AGV-XY-1234/connection` (订阅)
+
+NOTE: 不建议在 MQTT 主题名称中使用非 ASCII 字符（例如德语变音符号）��空格等，因为在出现问题时这可能会增加排查的难度。
+由于使用的主题名称派生自上面列出的属性值，因此也不建议在这些属性值中使用此类字符。
+
+== `connection` 主题
+
+* 当接收到 `OFFLINE`（离线）或 `CONNECTIONBROKEN`（连接断开）的连接状态时，车辆驱动程序将向内核 (kernel) 报告车辆的状态为 `UNKNOWN`（未知）。
+  这将导致车辆不可用于处理运输订单 (transport orders)。
+* 当接收到 `ONLINE`（在线）的连接状态后，驱动程序将向内核报告车辆的状态为 `IDLE`（空闲）。
+
+openTCS 中的任何其他车辆状态均派生自 `state` 消息。
+
+NOTE: openTCS 驱动程序期望车辆在 MQTT 代理 (broker) 中设置 _遗嘱 (last will)_（并设置 _retained_ 保留标志），以确保在代理与车辆的连接丢失时尽快发布 `CONNECTIONBROKEN` 的连接状态。
+
+NOTE: 尽管 VDA5050 1.1 规范指出此主题应使用服务质量 (QoS) 级别 0（最多一次），但 openTCS 驱动程序在订阅时使用的是 QoS 级别 1（至少一次），并期望车辆在发布到此主题时也使用 QoS 级别 1。
+
+== `state` 主题
+
+在 `state` 主题上接收到消息后，车辆驱动程序将...
+
+. 检查 `lastNodeId` 是否更新，如果发生了改变，则向内核报告相应的车辆当前点位（请参阅下文的 <<处理逻辑位置>>）。
+. 如果车辆报告了 `agvPosition`，则在内核中更新车辆的位姿 (pose)。
+. 在内核中更新载具处理设备 (load handling devices) 列表（请参阅下文的 <<载具处理设备的映射>>）。
+. 在内核中更新能量水平 (energy level)。
+. 在内核中更新映射到车辆属性的状态信息（请参阅下文的 <<状态信息到车辆属性的映射>>）。
+. 在内核中更新车辆的状态（请参阅下文的 <<车辆状态的映射>>）。
+. 检查（`nodeStates` 和）`edgeStates` 以查看路线上的某一步骤是否已完成，如果是，则向内核报告相应的移动指令 (movement command)（以及所有之前的移动指令）已完成（请参阅下文的 <<移动指令完成>>）。
+  （对于行驶订单路线的最后一步，还将检查 `actionStates` 以查看该步骤的动作（尤其是行驶订单的目的地操作）是否已完成。）
+
+[#movement-command-completion]
+=== 移动指令完成
+
+当车辆的状态消息中不再报告关联的节点状态 (node state) 和/或边状态 (edge state) 时，车辆驱动程序将认为车辆路线上的某个步骤及其相应的移动指令已完成。
+确切的行为可以通过在工厂模型中的车辆元素上设置（可选的）`vda5050:movementCommandCompletedCondition` 属性为以下值之一来进行配置：
+
+* `EDGE`：当关联的边状态从车辆状态中消失时，视为步骤/移动指令已完成。
+* `EDGE_AND_NODE`：当关联的边状态**和**节点状态**都**从车辆状态消失时，视为步骤/移动指令已完成。
+
+如果未设置上述属性，车辆驱动程序的默认行为对应于值 `EDGE_AND_NODE`。
+
+要使订单的**最终**移动指令被视为完成，**始终**要求关联的边状态**和**节点状态**都**从车辆状态中消失——无论 `vda5050:movementCommandCompletedCondition` 属性的值是什么。
+
+=== 处理逻辑位置
+
+车辆驱动程序通常期望车辆通过正确设置 `lastNodeId` 来报告其逻辑位置。
+
+在某些情况下，车辆可能无法报告逻辑位置，但仍然能够报告其位姿——即 `lastNodeId` 是一个空字符串，但 `agvPosition` 包含可用数据。
+（例如，车辆可能在开机后能够确定其位姿，但对行驶路线中的逻辑位置一无所知。）
+在这种情况下，车辆驱动程序将尝试通过将车辆的位姿与行驶路线中的点位进行匹配来推导逻辑位置，同时考虑为它们设置的坐标和方向角各自允许的偏差。
+
+NOTE: 此回退机制仅适用于边缘情况，并且严重依赖它（例如从未报告过任何逻辑位置）可能会减慢 openTCS 内核的运行速度，尤其是在包含大量车辆和/或点位的工厂模型中。
+因此，只要车辆具备条件，就应该始终报告其逻辑位置，这应当是每辆车在执行完第一个订单后的情况。
+（毕竟，每个订单都包含逻辑目标位置。）
+
+=== 载具处理设备的映射
+
+车辆驱动程序将根据车辆报告的 `loads`（负载）来设置载具处理设备列表。
+如果 `load` 包含 `loadPosition`，则车辆驱动程序将把相应的载具处理设备的标签设置为该值。
+如果未提供 `loadPosition` 或其为空字符串，车辆驱动程序将按照 `LHD-<index>` 的模式设置标签。
+
+NOTE: 根据 VDA5050 2.0，车辆报告的是负载 (loads)，而不是载具处理设备。
+因此，规范中没有为车辆提供报告空的载具处理设备的指定方法。
+由于 openTCS 中的载具处理设备是从报告的负载中派生出来的，因此所有相应的载具处理设备的 `full`（满载）标志都将被设置为 `true`。
+当车辆未报告任何负载时，载具处理设备列表将为空。
+
+=== 状态信息到车辆属性的映射
+
+车辆驱动程序将在内核的车辆元素上设置以下属性，其中包含车辆报告的信息：
+
+* 键为 `vda5050:errors.fatal` 的属性将包含 `errorLevel` 为 `FATAL` 的所有 `error` 的 `errorType` 的拼接列表。
+* 键为 `vda5050:errors.warning` 的属性将包含 `errorLevel` 为 `WARNING` 的所有 `error` 的 `errorType` 的拼接列表。
+* 键为 `vda5050:information.debug` 的属性将包含 `infoLevel` 为 `DEBUG` 的所有 `info` 元素的 `infoType` 的拼接列表。
+* 键为 `vda5050:information.info` 的属性将包含 `infoLevel` 为 `INFO` 的所有 `info` 元素的 `infoType` 的拼接列表。
+* 键为 `vda5050:paused` 的属性将包含车辆的暂停状态（`true` 或 `false`），如果车辆未报告暂停状态，则该属性将为 `null` / 未设置。
+
+=== 车辆状态的映射
+
+每接收到一条 `state` 消息，车辆驱动程序将向内核报告以下状态之一（优先级按以下顺序）：
+
+. `ERROR`（错误）：如果车辆报告至少一个 `errorLevel` 为 `FATAL` 的 `error`，则设置。
+. `UNAVAILABLE`（不可用）：如果车辆报告的 `operatingMode` 不是 `AUTOMATIC` 或 `SEMIAUTOMATIC`，则设置。
+. `CHARGING`（充电中）：如果车辆报告 `charging = true`，则设置。
+. `EXECUTING`（执行中）：如果车辆报告 `driving = true`，或者报告了至少一个 `nodeState` 或 `edgeState`，或者报告了至少一个 `actionStatus` 既不是 `FINISHED` 也未 `FAILED` 的 `actionState`，则设置。
+. `IDLE`（空闲）：在所有其他情况下设置。
+
+== `visualization` 主题
+
+在接收到 `visualization` 主题上的消息后，车辆驱动程序将使用 `agvPosition` 结构中的数据更新 openTCS 中车辆的精确位置和方向角。
+速度数据不会被转发给 openTCS。
+
+[#topic-order]
+== `order` 主题
+
+发送订单消息的一般行为如下：
+
+* 车辆驱动程序随后会为车辆路线上的每个步骤发送一条 VDA5050 订单消息。
+  这意味着，目前在点位 _A_ 并被指示经由点位 _B_ 和 _C_ 移动到点位 _D_ 的车辆，将始终收到三条 VDA5050 订单消息。
+* 该车辆驱动程序发送的订单消息包含车辆路线的 _基段 (base)_ 和 _预测范围 (horizon)_。
+  作为 _基段_ 和 _预测范围_ 发送的路线步骤数量可以通过车辆属性 `vda5050:maxStepsBase` 和 `vda5050:maxStepsHorizon` 进行配置——请参阅 xref:configuration.adoc[]。
+* VDA5050 订单消息具有可选字段，发送到车辆的订单消息不应包含该车辆不支持的任何可选字段。
+  可选字段的支持状态可以通过车辆属性进行设置，前缀为 `vda5050:optionalParams.order`，其后是订单消息中可选字段的路径（以点分隔）。
+  可能的值为 `REQUIRED`（必需）、`SUPPORTED`（支持）和 `NOT_SUPPORTED`（不支持），默认情况下所有可选字段被视为 `SUPPORTED`。
+  例如，要将 `order/nodes/nodePosition` 中的可选字段 `allowedDeviationTheta` 设置为不支持，您需要将车辆属性 `vda5050:optionalParams.order.nodes.nodePosition.allowedDeviationTheta` 设置为值 `NOT_SUPPORTED`。
+* 车辆驱动程序只有在来自车辆的状态消息表明它已接收到先前的订单消息（通过反映订单消息的 `orderId` 和 `orderUpdateId`）后，才会发送下一条订单消息（针对车辆路线上的下一个步骤）。
+** 如果车辆驱动程序已发送订单消息并收到来自车辆的状态消息，但该状态消息**未**表明车辆已收到订单消息，则车辆驱动程序将重复发送该订单消息。
+** 如果车辆驱动程序收到来自车辆的状态消息表明车辆拒绝了订单，它将不会重复发送订单消息或发送进一步的消息。
+   在向车辆发送任何新消息之前，必须在 openTCS 中（强制）撤回车辆当前的运输订单。
+   订单拒绝由具有以下 `errorType` 之一的错误指示：
+*** `validationError`
+*** `noRouteError`
+*** `orderError`
+*** `orderUpdateError`
+
+=== 位置 / 运输订单目的地上的动作
+
+以下车辆操作 (operations) 可被车辆驱动程序理解，并可用于工厂模型中的位置类型 (location type) 元素以及运输订单的目的地。
+
+NOTE: 对于运输订单目的地上的动作，目的地操作也必须用于工厂模型中相应位置的位置类型元素。
+如果目的地的操作不被该位置的位置类型所支持（即它未包含在工厂模型中位置类型的“支持的车辆操作”属性中），则运输订单将被标记为 `UNROUTABLE` 且不会被分配给任何车辆。
+
+==== `NOP` / 无动作
+
+与往常一样，运输订单中给定的目的地操作 `NOP` 被映射为没有任何动作的订单，即仅仅命令车辆移动到相应位置。
+
+==== `startCharging`
+
+映射到 VDA5050 预定义的 `startCharging` 动作的目的地操作，可以针对 openTCS 工厂模型中的每个车辆元素进行单独配置。
+为此，需要使用键为 `vda5050:rechargeOperation` 的属性来定义相应的目的地操作。
+该属性值包含作为字符串的目的地操作。
+
+如果未设置此属性，车辆驱动程序将回退到默认的目的地操作 `Charge`。
+
+无论目的地操作是什么，映射的 `startCharging` 动作的 `blockingType`（阻塞类型）都会被设置为 `SOFT`，且其动作参数不会被设置。
+
+请注意，驱动程序将 `startCharging` 动作作为充电订单的一部分发送，但它本身不主动发送 `stopCharging` 动作。
+如果车辆需要 `stopCharging` 动作，则需要通过在工厂模型中的点位上设置相应属性，将其配置为节点的常规任意动作（请参阅 <<actions-at-points-paths-locations,点、路径和位置上的动作>>。）
+
+==== 任意动作 (Arbitrary actions)
+
+除了上述被车辆驱动程序理解并映射到相应 VDA5050 动作的特定目的地操作外，车辆驱动程序还支持任意（用户特定或项目特定）动作。
+
+在创建运输订单时，您可以在位置类型和/或位置上设置以下属性，将 `ACTIONTYPE` 替换为相应的目的地操作：
+
+`vda5050:destinationAction.<ACTIONTYPE>.blockingType`::
+设置为要在目的地执行的动作的阻塞类型。
+（示例：`vda5050:destinationAction.pick.blockingType = SOFT`）
+`vda5050:destinationAction.<ACTIONTYPE>.parameter.<PARAMETER>`::
+将 `<PARAMETER>` 替换为要设置的动作参数的名称，并将属性的值设置为参数值。
+（示例：`vda5050:destinationAction.pick.parameter.x = 234`。
+另请参阅 <<Action parameters>>。）
+
+您还可以为运输订单中的任何行驶订单目的地设置以下属性：
+
+`vda5050:destinationAction.blockingType`::
+设置为要在目的地执行的动作的阻塞类型。
+（示例：`vda5050:destinationAction.blockingType = SOFT`）
+`vda5050:destinationAction.parameter.<PARAMETER>`::
+将 `<PARAMETER>` 替换为要设置的动作参数的名称，并将属性的值设置为参数值。
+（示例：`vda5050:destinationAction.parameter.x = 234`。
+另请参阅 <<Action parameters>>。）
+
+从位置类型读取的属性会被从位置读取的属性覆盖，而后者又会被从行驶订单目的地读取的属性覆盖。
+如果未设置这些属性或设置不正确，则相应动作将使用默认值（阻塞类型为 `NONE` 且无动作参数）。
+
+[#actions-at-points-paths-locations]
+=== 点、路径和位置上的动作
+
+您可以在点、路径和位置上设置以下属性，这些属性被映射到节点上的动作（对于点和位置）以及边上的动作（对于路径）：
+
+`vda5050:action.<INDEX>`::
+设置为要在边或节点上执行的动作的动作类型。
+（示例：`vda5050:action.01 = beep`）
+`vda5050:action.<INDEX>.blockingType`::
+设置为要在边或节点上执行的动作的阻塞类型。
+（示例：`vda5050:action.01.blockingType = SOFT`）
+`vda5050:action.<INDEX>.parameter.<PARAMETER>`::
+将 `<PARAMETER>` 替换为要设置的动作参数的名称，并将属性的值设置为参数值。
+（示例：`vda5050:action.pick.parameter.x = 234`。
+另请参阅 <<Action parameters>>。）
+`vda5050:action.<INDEX>.when`::
+设置为应该在节点上执行动作的情况/触发器。
+属性值包含一个由 `|` 分隔的值列表。
+可能的值为 `PASSING`、`ORDER_START` 和 `ORDER_END`。
+如果未设置此属性，则使用默认值 `PASSING | ORDER_START | ORDER_END`。
+（示例：`vda5050.action.01.when = PASSING | ORDER_START`）
+`vda5050:action.<INDEX>.tags`::
+设置为动作的标签。
+属性值包含一个由 `|` 分隔的标签列表。
+如果未设置此属性，则使用默认值 `default`。
+（示例：`vda5050.action.01.tags = resupply line 1 | resupply line 2`）
+
+`<INDEX>` 可以是任何内容，但建议坚持使用十进制数字。
+（添加到节点和边的动作的顺序由对点和路径的属性按字典顺序排序决定。）
+
+NOTE: 如果缺少阻塞类型或动作参数的属性或设置不正确，则相应动作将使用默认值（阻塞类型为 `NONE` 且无动作参数）。
+
+[NOTE]
+====
+对于目的地节点，属性从 openTCS 元素中读取并按以下顺序添加到 VDA5050 `order` 消息中：
+
+1. 从移动的目的地（点位）
+2. 从移动的目的地位置（如果有）
+3. 从运输订单的目的地
+====
+
+==== 动作参数
+
+默认情况下，参数值在订单消息中作为字符串设置。
+要将它们解析并用作浮点数、整数或布尔值，请在值前面加上 `float:`、`integer:` 或 `boolean:`。
+要强制将参数用作字符串（即使它以诸如 `integer:` 开头），请在前面加上 `string:`。
+示例：
+
+* `vda5050:action.pick.parameter.x = 234` (用作字符串)
+* `vda5050:action.pick.parameter.x = float:3.14` (解析并用作浮点数)
+* `vda5050:action.pick.parameter.x = integer:234` (解析并用作整数)
+* `vda5050:action.pick.parameter.x = boolean:true` (解析并用作布尔值)
+* `vda5050:action.pick.parameter.x = string:integer:234` (强制输出字符串值 `integer:234`)
+
+==== 车辆、运输订单目的地和路径处的动作白名单
+
+可以使用以下属性来过滤发送到车辆的动作：
+
+* 工厂模型中的车辆元素，
+* 工厂模型中的路径元素，以及
+* 运输订单目的地。
+
+为此，可以在这些元素中的任何一个上设置键为 `vda5050:actionTags` 的属性。
+属性值需要是用 `|` 分隔的动作标签列表，并作为白名单发挥作用，即只向相应的车辆发送具有给定标签的动作。
+值为 `*`（默认值）允许发送所有动作；将值设置为空字符串将禁止发送所有动作。
+
+例如，如果您只想允许将标记为 `resupply line 1` 和 `resupply line 2` 的动作发送给车辆，请在工厂模型中的车辆元素上设置：
+
+----
+vda5050:actionTags = resupply line 1 | resupply line 2
+----
+
+若要限制针对特定边/节点发送给车辆的动作，请在工厂模型中的相应路径上设置此属性。
+若要限制针对特定过程发送给车辆的动作，请在相应的运输订单目的地上设置此属性。
+
+动作只有在通过了相应车辆、路径和运输订单目的地的所有白名单时才会被发送。
+
+==== 覆盖每辆车的动作阻塞类型
+
+由于 VDA5050 2.0 并未明确说明预定义动作的具体阻塞类型，不同类型的车辆可能对这些动作期望不同的阻塞类型。
+为了处理车辆的不同期望/行为，可以覆盖每辆车的动作阻塞类型。
+要利用这一点，您可以在工厂模型中的车辆元素上设置一个模式为 `vda5050:action.<ACTIONTYPE>.blockingType` 键的属性，并将其值设置为 `HARD`、`SOFT` 或 `NONE`。
+然后，车辆驱动程序将始终对该类型的动作使用在车辆元素中给定的阻塞类型，从而覆盖在点、路径或位置元素中指定的任何内容。
+
+例如，您可以在工厂模型中的车辆元素上设置 `vda5050:action.beep.blockingType = SOFT`。
+每当向车辆发送类型为 `beep` 的动作时，其阻塞类型将始终为 `SOFT`。
+
+=== 运输订单目的地上的动作
+
+与在点、路径和位置上设置动作类似，也可以在运输订单目的地上设置动作。
+以这种方式设置的动作独立于工厂模型，即它们不需要在位置类型处定义。
+
+可以在运输订单目的地上设置动作的属性有：
+
+* `vda5050:action.<INDEX>`
+* `vda5050:action.<INDEX>.blockingType`
+* `vda5050:action.<INDEX>.parameter.<PARAMETER>`
+
+有关这些属性的解释，请参阅 <<actions-at-points-paths-locations,点、路径和位置上的动作>>。
+
+=== 订单消息中的节点位置属性
+
+* `nodePosition.x` 和 `nodePosition.y`:
+  使用工厂模型中相应点位的坐标。
+* `nodePosition.theta`:
+  如果已设置，则使用工厂模型中相应点位的方向角。
+  如果未设置，`theta` 将保留为空。
+* `nodePosition.allowedDeviationXY`:
+  使用在工厂模型中相应点或车辆上设置的属性 `vda5050:deviationXY` 的值，其中点上的属性具有优先权。
+  如果两者都未设置，`allowedDeviationXY` 将保留为空。
+* `nodePosition.allowedDeviationTheta`:
+  使用在工厂模型中相应点或车辆上设置的属性 `vda5050:deviationTheta` 的值，其中点上的属性具有优先权。
+  如果两者都未设置，`allowedDeviationTheta` 将保留为空。
+  如果已设置，角度必须在 0 到 180 度范围内。
+* `nodePosition.mapId`:
+  使用在工厂模型中相应点或车辆上设置的属性 `vda5050:mapId` 的值，其中点上的属性具有优先权。
+  如果两者都未设置，`mapId` 将被设置为空字符串。
+
+NOTE: 工厂模型中的角度预期为度 (degrees)，0 度对应于 3 点钟位置，正值表示逆时针旋转。
+
+==== 初始订单消息的偏差扩展
+
+在为新 VDA5050 订单发送的第一条订单消息中，车辆驱动程序将始终扩展第一个节点的偏差范围（`allowedDeviationXY` 和 `allowedDeviationTheta`），以包含车辆当前的位置和方向。
+驱动程序会从车辆属性 `vda5050:extendedDeviationRangePadding` 中读取一个可选的填充值，并将其添加到扩展的 `allowedDeviationXY` 中。
+
+=== 订单消息中的边 (Edge) 属性
+
+* `edge.maxSpeed`:
+  根据移动是前进还是后退，使用在工厂模型中相应路径上设置的正向或反向最大速度值。
+* `edge.orientation`:
+  根据移动是前进还是后退，使用在工厂模型中相应路径上设置的属性 `vda5050:orientation.forward` 或 `vda5050:orientation.reverse` 的值。
+  如果未设置相应属性，`edge.orientation` 将保留为空。
+* `edge.rotationAllowed`:
+  根据移动是前进还是后退，使用在工厂模型中相应路径上设置的属性 `vda5050:rotationAllowed.forward` 或 `vda5050:rotationAllowed.reverse` 的值。
+  如果未设置相应属性，`edge.rotationAllowed` 将保留为空。
+
+NOTE: 工厂模型中的角度预期为度 (degrees)，0 度对应于 3 点钟位置，正值表示逆时针旋转。
+
+[#topic-instantactions]
+== `instantActions` 主题
+
+车辆驱动程序仅在以下小节中描述的特定情况下发送几种类型的即时动作 (instant actions)。
+
+期望车辆通过将其列在状态消息的 `actionStates` 数组中来确认已接收到即时动作。
+如果车辆拒绝即时动作，它仍必须在其 `actionStates` 数组中反映该即时动作，并将其 `actionStatus` 设置为 `FAILED`。
+
+NOTE: 车辆确认已接收到即时动作（即使是它拒绝的那些动作）非常重要。
+如果不这样做，会导致车辆驱动程序重新发送 `instantActions` 消息，从而实际上导致这些消息陷入无休止发送的循环，隐式地也阻止了任何进一步的 `order` 消息被发送。
+
+[#instantaction-cancelorder]
+=== `cancelOrder` (取消订单)
+
+在以下情况下会自动发送 `cancelOrder` 类型的即时动作：
+
+* 当运输订单在 openTCS 中被**强制**从车辆撤回时。
+* 当属于 openTCS 中行驶订单的第一条订单消息即将发送，并且车辆报告的 `nodeStates` 和 `edgeStates` 数组不为空时。
+
+该即时动作的阻塞类型被设置为 `NONE`。
+
+=== `startPause`/`stopPause`
+
+当车辆在 openTCS 中被暂停/取消暂停时，将发送 `startPause`/`stopPause` 类型的即时动作。
+该即时动作的阻塞类型设置为 `NONE`。
+
+=== 通过 openTCS 内核 API 发送任意即时动作
+
+可以使用 openTCS 内核 API 让车辆驱动程序发送任何类型的即时动作。
+这可以通过使用适当准备的 `org.opentcs.commadapter.vehicle.vda5050.v2_0.commands.SendInstantActions` 实例调用 `VehicleService.sendCommAdapterCommand()` 来完成。
+
+== `factsheet` 主题
+
+Factsheet (事实清单) 消息目前不由驱动程序处理。
+
+[#supported-communication-adapter-messages]
+== 支持的通信适配器消息
+
+本节描述可以发送到车辆驱动程序的通信适配器消息，例如通过 openTCS Web API（请参阅 openTCS Web API 规范）。
+
+=== 单次扩展偏差 (Extend deviation once)
+
+* 类型: `vda5050:extendDeviationOnce`
+* 参数: 无
+
+向车辆驱动程序发送 _单次扩展偏差_ 消息将导致车辆驱动程序在发送给车辆的下一条订单消息中扩展（节点）偏差范围。
+偏差范围的扩展...
+
+* 仅针对订单中的最开始第一个节点
+* 并且仅当车辆的当前位置超出该节点允许的偏差范围时。
+
+否则，此消息将被忽略。
+
+[source,json]
+.示例：单次扩展偏差消息
+----
+{
+  "type": "vda5050:extendDeviationOnce",
+  "parameters": []
+}
+----

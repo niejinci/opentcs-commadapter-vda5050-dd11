@@ -1,0 +1,135 @@
+// SPDX-FileCopyrightText: The openTCS Authors
+// SPDX-License-Identifier: CC-BY-4.0
+
+:doctype: book
+:toc: macro
+:toclevels: 6
+:sectnums: all
+:sectnumlevels: 6
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+toc::[]
+
+= VDA5050 2.0 驱动程序配置
+
+驱动程序从工厂模型 (plant model) 中的车辆元素的属性中读取配置数据。
+它读取具有以下键 (keys) 的属性：
+
+`vda5050:version` (必填)::
+必须设置为 `2.0`
+`vda5050:topicPrefix` (如果未设置 `vda5050:interfaceName`，则必填)::
+该属性值包含一个用作所有 MQTT 主题前缀的字符串，例如 `myprefix`。
+如果未设置此属性，主题前缀将按如下方式从 `vda5050:interfaceName`、`vda5050:manufacturer` 和 `vda5050:serialNumber` 属性中派生：`<interfaceName>/v2/<manufacturer>/<serialNumber>`。
+`vda5050:interfaceName` (如果未设置 `vda5050:topicPrefix`，则必填)::
+该属性值包含要作为 MQTT 主题一部分使用的接口名称，例如 `uagv`。
+`vda5050:manufacturer` (必填)::
+该属性值包含要包含在消息头中的制造商字符串，例如 `Some_Company`。
+`vda5050:serialNumber` (必填)::
+该属性值包含要包含在消息头中的车辆序列号，例如 `AGV-XY-1234`。
+`vda5050:topicConnectionName` (可选)::
+该属性值包含要订阅以接收来自车辆的 connection (连接) 消息的主题名称。
+该值会附加到车辆的主题前缀之后。
+（默认值：`connection`。）
+`vda5050:topicConnectionQos` (可选)::
+该属性值包含用于订阅 connection 主题的 QoS 级别。
+可能的值为 `at_most_once`（最多一次）、`at_least_once`（至少一次）和 `exactly_once`（恰好一次）；同时也接受值 `0`、`1` 和 `2`。
+（默认值：`at_most_once`。）
+`vda5050:topicStateName` (可选)::
+该属性值包含要订阅以接收来自车辆的 state (状态) 消息的主题名称。
+该值会附加到车辆的主题前缀之后。
+（默认值：`state`。）
+`vda5050:topicStateQos` (可选)::
+该属性值包含用于订阅 state 主题的 QoS 级别。
+可能的值为 `at_most_once`、`at_least_once` 和 `exactly_once`；同时也接受值 `0`、`1` 和 `2`。
+（默认值：`at_most_once`。）
+`vda5050:topicVisualizationName` (可选)::
+该属性值包含要订阅以接收来自车辆的 visualization (可视化) 消息的主题名称。
+该值会附加到车辆的主题前缀之后。
+（默认值：`visualization`。）
+`vda5050:topicVisualizationQos` (可选)::
+该属性值包含用于订阅 visualization 主题的 QoS 级别。
+可能的值为 `at_most_once`、`at_least_once` 和 `exactly_once`；同时也接受值 `0`、`1` 和 `2`。
+（默认值：`at_most_once`。）
+`vda5050:topicFactsheetName` (可选)::
+该属性值包含要订阅以接收来自车辆的 factsheet (事实清单) 消息的主题名称。
+该值会附加到车辆的主题前缀之后。
+（默认值：`factsheet`。）
+`vda5050:topicFactsheetQos` (可选)::
+该属性值包含用于订阅 factsheet 主题的 QoS 级别。
+可能的值为 `at_most_once`、`at_least_once` 和 `exactly_once`；同时也接受值 `0`、`1` 和 `2`。
+（默认值：`at_most_once`。）
+`vda5050:topicOrderName` (可选)::
+该属性值包含要向其发布 order (订单) 消息的主题名称。
+该值会附加到车辆的主题前缀之后。
+（默认值：`order`。）
+`vda5050:topicOrderQos` (可选)::
+该属性值包含用于发布 order 消息的 QoS 级别。
+可能的值为 `at_most_once`、`at_least_once` 和 `exactly_once`；同时也接受值 `0`、`1` 和 `2`。
+（默认值：`at_most_once`。）
+`vda5050:topicInstantActionsName` (可选)::
+该属性值包含要向其发布 instant action (即时动作) 消息的主题名称。
+该值会附加到车辆的主题前缀之后。
+（默认值：`instantActions`。）
+`vda5050:topicInstantActionsQos` (可选)::
+该属性值包含用于发布 instant action 消息的 QoS 级别。
+可能的值为 `at_most_once`、`at_least_once` 和 `exactly_once`；同时也接受值 `0`、`1` 和 `2`。
+（默认值：`at_most_once`。）
+`vda5050:rechargeOperation` (可选)::
+该属性值包含一个字符串，该字符串应作为工厂模型中车辆的充电操作 (recharge operation)，例如 `Recharge`。
+（默认值：`Charge`。）
+`vda5050:maxStepsBase` (可选)::
+该属性值包含车辆的基段容量 (base capacity) 的十进制表示，即车辆可以承担的 VDA5050 订单基段中未完成路线步骤的最大数量，例如 `10`。
+（默认值：`2`。）
+`vda5050:maxDistanceBase` (可选)::
+该属性值包含当前已排队的移动指令可能覆盖的最大距离（以毫米为单位）。
+一旦车辆当前排队的所有移动指令总和达到定义的值，将不再接受其他指令。
+（默认值：`Long.MAX_VALUE` （约等于一光年））
+`vda5050:maxStepsHorizon` (可选)::
+该属性值包含车辆的预测范围容量 (horizon capacity) 的十进制表示，即车辆可以承担的 VDA5050 订单预测范围内的路线步骤的最大数量，例如 `10`。
+（默认值：不受限制，即预期路线上的所有预测范围步骤。）
+`vda5050:minVisualizationInterval` (可选)::
+该属性值包含转发给内核的两次可视化更新之间的最小时间（以毫秒为单位）的十进制表示，例如 `1000`。
+（默认值：`500`。）
+`vda5050:vehicleLengthLoaded` (可选)::
+该属性值包含当车辆报告至少有一个负载时要设置的车辆长度（以毫米为单位）的十进制表示。
+（默认值：工厂模型中配置的车辆长度。）
+`vda5050:vehicleLengthUnloaded` (可选)::
+该属性值包含当车辆未报告负载时要设置的车辆长度（以毫米为单位）的十进制表示。
+（默认值：工厂模型中配置的车辆长度。）
+`vda5050:movementCommandCompletedCondition` (可选)::
+该属性值包含一个描述移动指令被视为完成的条件的字符串。
+有效值为 `EDGE` 和 `EDGE_AND_NODE`。
+有关此属性背后功能的详细信息，请参阅 xref:runtime-behaviour.adoc#movement-command-completion[] 中的“移动指令完成 (Movement command completion)”部分。
+（默认值：`EDGE_AND_NODE`）
+`vda5050:deviationExtensionTrigger` (可选)::
+该属性值包含一个字符串，描述在何种条件下，订单中第一个节点的偏差范围会被扩展以包含车辆的位置。
+有效值为：
+* `always` - 偏差范围始终被扩展。
+* `never` - 偏差范围从不扩展。
+* `auto` - 在向车辆发送 `cancelOrder` 即时动作后，偏差范围将自动扩展一次。
+  （请参阅 xref:runtime-behaviour.adoc#instantaction-cancelorder[] 中关于 `cancelOrder` 即时动作的部分。）
+* `manually` - 在手动发出扩展请求后，偏差范围将扩展一次。
+  （请参阅 xref:runtime-behaviour.adoc#supported-communication-adapter-messages[] 中关于支持的通信适配器消息的部分。）
+* `auto+manually` - 这是 `auto` 和 `manually` 选项的结合。
+`vda5050:extendedDeviationRangePadding` (可选)::
+该属性值包含以米为单位的填充距离，当节点的偏差范围扩展以包含车辆位置时，会加上该距离。
+如果值为负数，则将其替换为零。
+（默认值：`0.01`。）
+`vda5050:optionalParams.order` (前缀，可选)::
+以此前缀开头的属性键应该通过点分隔的路径扩展到订单消息中的可选字段。
+属性值包含该可选字段的支持状态，可以是 `REQUIRED`（必需）、`SUPPORTED`（支持）或 `NOT_SUPPORTED`（不支持）。
+（默认值：`SUPPORTED`）
+`vda5050:maxIgnoredRejections` (可选)::
+该属性值包含在驱动程序将订单拒绝视为永久性并停止重试之前，指示订单被拒绝的连续状态消息的最大数量。
+（默认值：`0`。）
+`vda5050:lastNodeIdRequiredForMovementCompletion` (可选)::
+该属性值包含一个布尔值，用于指示驱动程序是否不仅应考虑 `edgeStates` 和 `nodeStates` 来决定车辆是否已完成前往其路线上某节点的移动，而且还要求车辆报告的 `lastNodeId` 必须反映该节点或该节点之后的节点。
+（默认值：`false`。）
+
+NOTE: 如果任何必填属性未设置或包含不可用的数据，驱动程序可能无法被实例化/连接到该车辆。

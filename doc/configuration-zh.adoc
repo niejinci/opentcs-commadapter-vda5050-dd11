@@ -1,0 +1,90 @@
+// SPDX-FileCopyrightText: The openTCS Authors
+// SPDX-License-Identifier: CC-BY-4.0
+
+:doctype: book
+:toc: macro
+:toclevels: 6
+:sectnums: all
+:sectnumlevels: 6
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+toc::[]
+
+= 驱动程序的使用与配置
+
+为了使用该驱动程序，需要将一些配置数据作为内核配置文件的部分，或者作为工厂模型 (plant model) 元素或运输订单提供给它。
+
+== 配置文件条目
+
+为了使车辆驱动程序正常运行，以下所有条目都需要在内核应用程序的配置文件中设置为有效值：
+
+`commadapter.vehicle.vda5050.enabledVersions`::
+设置为启用该车辆驱动程序的 VDA5050 规范版本列表；设置为空字符串以禁用它。
+当禁用时，内核将完全不使用该驱动程序，即使车辆已为其进行了配置。
+此处使用的有效版本为：`1.1`、`2.0`。
+`commadapter.vehicle.vda5050.onOpModeChangeDoUpdateIntegrationLevel`::
+设置为 VDA5050 运行模式 (operating mode) 名称到 openTCS 集成级别 (integration level) 名称的映射。
+每当车辆报告的运行模式更改为映射中给定的值时，openTCS 中车辆的集成级别将更改为该运行模式所给定的集成级别。
+运行模式名称的有效值为 `TEACHIN`、`SERVICE`、`MANUAL`、`SEMIAUTOMATIC` 和 `AUTOMATIC`。
+集成级别名称的有效值为 `TO_BE_UTILIZED`、`TO_BE_RESPECTED`、`TO_BE_NOTICED`、`TO_BE_IGNORED`；值 `LEAVE_UNCHANGED`（这是每个运行模式的默认值）可用于显式声明不应更改集成级别。 +
++
+请注意，要将车辆的集成级别设置为 `TO_BE_NOTICED` 或 `TO_BE_IGNORED`，openTCS 要求车辆未处理任何运输订单，因此在这些情况下，将驱动程序配置为显式撤回任何运输订单通常是有意义的。
+（见下文。）
+`commadapter.vehicle.vda5050.onOpModeChangeDoWithdrawOrder`::
+设置为 VDA5050 运行模式名称到布尔值的映射。
+每当车辆报告的运行模式更改为映射中给定的值时，车辆的运输订单可能会被撤回；如果被撤回，这是强制发生的。
+运行模式名称的有效值为 `TEACHIN`、`SERVICE`、`MANUAL`、`SEMIAUTOMATIC` 和 `AUTOMATIC`。
+有效的赋值为 `true`（强制撤回运输订单）和 `false`（不撤回运输订单），其中 `false` 是每个运行模式的默认值。
+请注意，建议始终设置 `MANUAL=true`。
+虽然通常可以将其设置为 `false`，但遵循 VDA5050 规范的车辆在切换到手动模式或从手动模式切换时将清除其订单缓冲区，从而停止处理当前订单；撤回订单可确保车辆在 openTCS 中的状态也能反映这一点。
+`commadapter.vehicle.vda5050.onOpModeChangeDoResetPosition`::
+设置为 VDA5050 运行模式名称到布尔值的映射。
+每当车辆报告的运行模式更改为映射中给定的值时，车辆的最后已知位置可能会被重置。
+运行模式名称的有效值为 `TEACHIN`、`SERVICE`、`MANUAL`、`SEMIAUTOMATIC` 和 `AUTOMATIC`。
+有效的赋值为 'true'（重置最后已知位置）和 'false'（不重置最后已知位置），其中 'false' 是每个运行模式的默认值。
+`commadapter.vehicle.vda5050.mqtt.brokerHost`::
+要使用的 MQTT 代理 (broker) 的 IP 地址或主机名。
+`commadapter.vehicle.vda5050.mqtt.brokerPort`::
+要使用的 MQTT 代理的端口号。
+`commadapter.vehicle.vda5050.mqtt.connectionEncrypted`::
+是否对与 MQTT 代理的连接使用 SSL/TLS 加密。
+有效值为 `true` 和 `false`。
+请注意，对于加密连接，服务器的证书必须由驱动程序运行所在系统信任的 CA 证书签名。
+`commadapter.vehicle.vda5050.mqtt.username`::
+用于在 MQTT 代理进行身份验证的用户名。
+在不需要与代理进行身份验证的情况下，可以设置为任意值。
+`commadapter.vehicle.vda5050.mqtt.password`::
+用于在 MQTT 代理进行身份验证的密码。
+在不需要与代理进行身份验证的情况下，可以设置为任意值。
+`commadapter.vehicle.vda5050.mqtt.clientId`::
+用于连接到 MQTT 代理的客户端 ID。
+在连接到代理的所有客户端中，这应该是唯一的。
+`commadapter.vehicle.vda5050.mqtt.keepAliveInterval`::
+与 MQTT 代理连接的 keep-alive（保活）间隔（以毫秒为单位）。
+可以设置为零以禁用 keep-alive 机制。
+如果非零，将向下取整到秒。
+`commadapter.vehicle.vda5050.mqtt.reconnectInterval`::
+尝试重新连接到 MQTT 代理的间隔（以毫秒为单位）。
+
+可以将以下示例配置用作模板粘贴到内核配置文件中，并根据各自的工厂进行调整：
+
+----
+commadapter.vehicle.vda5050.enabledVersions = 1.1, 2.0
+commadapter.vehicle.vda5050.onOpModeChangeDoUpdateIntegrationLevel = AUTOMATIC=LEAVE_UNCHANGED, SEMIAUTOMATIC=LEAVE_UNCHANGED, SERVICE=LEAVE_UNCHANGED, MANUAL=LEAVE_UNCHANGED, TEACHIN=LEAVE_UNCHANGED
+commadapter.vehicle.vda5050.onOpModeChangeDoWithdrawOrder = AUTOMATIC=false, SEMIAUTOMATIC=false, SERVICE=false, MANUAL=true, TEACHIN=false
+commadapter.vehicle.vda5050.onOpModeChangeDoResetPosition = AUTOMATIC=false, SEMIAUTOMATIC=false, SERVICE=false, MANUAL=false, TEACHIN=false
+commadapter.vehicle.vda5050.mqtt.brokerHost = broker.example.com
+commadapter.vehicle.vda5050.mqtt.brokerPort = 1883
+commadapter.vehicle.vda5050.mqtt.connectionEncrypted = false
+commadapter.vehicle.vda5050.mqtt.username = some-user
+commadapter.vehicle.vda5050.mqtt.password = secret
+commadapter.vehicle.vda5050.mqtt.clientId = opentcs-vda5050-driver
+commadapter.vehicle.vda5050.mqtt.keepAliveInterval = 10000
+commadapter.vehicle.vda5050.mqtt.reconnectInterval = 10000
+----
