@@ -225,7 +225,15 @@ public interface ObjectProperties {
    * Default orientation deviation for this point.
    */
   String PROPKEY_POINT_DEVIATION_THETA = PROPKEY_VEHICLE_DEVIATION_THETA;
-
+  /**
+   * The orientation type on a path/edge with forward movement.
+   * 枚举类型，取值为{GLOBAL, TANGENTIAL}:
+   * 如果没有下发则表示为"TANGENTIAL""GLOBAL"- 地图全局坐标系，表示车沿着orientation方向移动
+   * "TANGENTIAL"- 路径段的切线，当orientation为 0.0表示向前，为 PI 则表示向后
+   */
   String PROPKEY_PATH_ORIENTATION_TYPE_FORWARD = "vda5050:orientationType.forward";
+  /**
+   * The orientation type on a path/edge with reverse movement.
+   */
   String PROPKEY_PATH_ORIENTATION_TYPE_REVERSE = "vda5050:orientationType.reverse";
 }

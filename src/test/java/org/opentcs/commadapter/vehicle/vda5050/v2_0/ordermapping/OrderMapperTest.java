@@ -3,6 +3,7 @@
 package org.opentcs.commadapter.vehicle.vda5050.v2_0.ordermapping;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.when;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_CUSTOM_ACTION_PREFIX;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_CUSTOM_DEST_ACTION_PREFIX;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_EXECUTABLE_ACTIONS_TAGS;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_FORWARD;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.DeviationExtensionTrigger;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties;
+import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.NodePosition;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Node;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Order;
 import org.opentcs.components.kernel.services.TCSObjectService;
@@ -298,7 +301,7 @@ public class OrderMapperTest {
 
     assertEquals(dest.getNodeId(), source.getNodeId());
     assertEquals(dest.getSequenceId(), source.getSequenceId());
-    assertEquals(dest.getNodePosition(), source.getNodePosition());
+    assertSameNodePositionValues(dest.getNodePosition(), source.getNodePosition());
     assertEquals(dest.getActions().size(), source.getActions().size());
   }
 
@@ -385,7 +388,7 @@ public class OrderMapperTest {
 
     assertEquals(destNode.getNodeId(), sourceNode.getNodeId());
     assertEquals(destNode.getSequenceId(), sourceNode.getSequenceId());
-    assertEquals(destNode.getNodePosition(), sourceNode.getNodePosition());
+    assertSameNodePositionValues(destNode.getNodePosition(), sourceNode.getNodePosition());
     assertEquals(destNode.getActions().size(), sourceNode.getActions().size());
   }
 
@@ -439,6 +442,83 @@ public class OrderMapperTest {
     assertThat(order.getNodes().get(2).isReleased(), is(false));
     assertThat(order.getEdges().get(0).isReleased(), is(true));
     assertThat(order.getEdges().get(1).isReleased(), is(false));
+  }
+
+  @Test
+  public void calculateNodeThetaAndEdgeOrientationFromCoordinates() {
+    vehicle = vehicle.withPose(new Pose(new Triple(1000, 1000, 0), Double.NaN));
+    when(objectService.fetch(Vehicle.class, vehicle.getReference()))
+        .thenReturn(Optional.of(vehicle));
+
+    Point source = new Point("Point-0001");
+    source = source.withPose(
+        source.getPose()
+            .withPosition(new Triple(1000, 3000, 0))
+            .withOrientationAngle(180.0)
+    );
+    Point dest = new Point("Point-0002");
+    dest = dest.withPose(
+        dest.getPose()
+            .withPosition(new Triple(3000, 3000, 0))
+            .withOrientationAngle(270.0)
+    );
+    Path path = new Path("Path-0001", source.getReference(), dest.getReference())
+        .withMaxVelocity(1000)
+        .withMaxReverseVelocity(500)
+        .withProperty(PROPKEY_PATH_ORIENTATION_FORWARD, "45");
+    MovementCommand command = createMovementCommandWithStep(
+        new Step(path, source, dest, Orientation.FORWARD, 0, 1)
+    );
+
+    Order order = mapper.toOrder(command);
+
+    assertThat(order.getNodes().get(0).getNodePosition().getTheta(), closeTo(Math.PI / 2, 0.00001));
+    assertThat(order.getNodes().get(1).getNodePosition().getTheta(), closeTo(0.0, 0.00001));
+    assertThat(order.getEdges().get(0).getOrientation(), closeTo(0.0, 0.00001));
+  }
+
+  @Test
+  public void calculateSingleNodeThetaFromVehiclePosition() {
+    vehicle = vehicle.withPose(new Pose(new Triple(1000, 1000, 0), Double.NaN));
+    when(objectService.fetch(Vehicle.class, vehicle.getReference()))
+        .thenReturn(Optional.of(vehicle));
+
+    Point dest = new Point("Point-0001");
+    dest = dest.withPose(dest.getPose().withPosition(new Triple(3000, 3000, 0)));
+
+    Order order = mapper.toOrder(createMovementCommandWithPoints(null, dest));
+
+    assertThat(order.getNodes().get(0).getNodePosition().getTheta(), closeTo(Math.PI / 4, 0.00001));
+  }
+
+  @Test
+  public void recalculatingSourceThetaForNextOrderDoesNotModifyPreviousOrder() {
+    Point start = new Point("Point-0001");
+    start = start.withPose(start.getPose().withPosition(new Triple(0, 0, 0)));
+    Point middle = new Point("Point-0002");
+    middle = middle.withPose(middle.getPose().withPosition(new Triple(1000, 0, 0)));
+    Point end = new Point("Point-0003");
+    end = end.withPose(end.getPose().withPosition(new Triple(1000, 1000, 0)));
+
+    Order firstOrder = mapper.toOrder(createMovementCommandWithPoints(start, middle));
+    Double firstOrderDestinationTheta = firstOrder.getNodes().get(1).getNodePosition().getTheta();
+
+    mapper.toOrder(createMovementCommandWithPoints(middle, end));
+
+    assertThat(
+        firstOrder.getNodes().get(1).getNodePosition().getTheta(),
+        is(firstOrderDestinationTheta)
+    );
+  }
+
+  private void assertSameNodePositionValues(NodePosition expected, NodePosition actual) {
+    assertEquals(expected.getX(), actual.getX());
+    assertEquals(expected.getY(), actual.getY());
+    assertEquals(expected.getTheta(), actual.getTheta());
+    assertEquals(expected.getAllowedDeviationXY(), actual.getAllowedDeviationXY());
+    assertEquals(expected.getAllowedDeviationTheta(), actual.getAllowedDeviationTheta());
+    assertEquals(expected.getMapId(), actual.getMapId());
+    assertEquals(expected.getMapDescription(), actual.getMapDescription());
   }
 
   private MovementCommand createMovementCommandWithStep(Step step) {

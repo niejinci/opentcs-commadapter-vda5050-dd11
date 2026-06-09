@@ -19,6 +19,7 @@ import javax.annotation.Nonnull;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.DeviationExtensionTrigger;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.Action;
+import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.NodePosition;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Edge;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Node;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Order;
@@ -135,6 +136,8 @@ public class OrderMapper {
         ? createOrderWithMovement(command, vehicle)
         : createOrderWithoutMovement(command, vehicle);
 
+    adjustOrientations(lastMappedOrder, vehicle);
+
     return lastMappedOrder;
   }
 
@@ -196,7 +199,7 @@ public class OrderMapper {
     }
     else {
       // Use the destination node of the previous order message as the new source node.
-      return lastMappedOrder.getNodes().get(1);
+      return copyNode(lastMappedOrder.getNodes().get(1));
     }
   }
 
@@ -317,6 +320,113 @@ public class OrderMapper {
             .map(propertyAction -> ActionsMapping.fromPropertyAction(vehicle, propertyAction))
             .collect(Collectors.toList())
     );
+  }
+
+  private void adjustOrientations(Order order, Vehicle vehicle) {
+    adjustNodeThetas(order, vehicle);
+    adjustEdgeOrientations(order);
+  }
+
+  private void adjustNodeThetas(Order order, Vehicle vehicle) {
+    for (int i = 0; i < order.getNodes().size(); i++) {
+      Node currentNode = order.getNodes().get(i);
+      NodePosition currentPosition = currentNode.getNodePosition();
+
+      if (currentPosition == null) {
+        LOG.debug(
+            "Skipping theta calculation for node '{}' without a node position.",
+            currentNode.getNodeId()
+        );
+        continue;
+      }
+
+      double theta;
+      if (i == 0) {
+        theta = vehicle.getPose().getPosition() == null
+            ? 0.0
+            : Math.atan2(
+                currentPosition.getY() - vehicle.getPose().getPosition().getY() / 1000.0,
+                currentPosition.getX() - vehicle.getPose().getPosition().getX() / 1000.0
+            );
+            // 这里的 / 1000.0 是因为 openTCS 的 Vehicle.getPose().getPosition() 坐标单位是 mm，
+            // 而 VDA5050 的 NodePosition.x/y 在 NodeMapping 里已经转换成了 m
+      }
+      else {
+        NodePosition previousPosition = order.getNodes().get(i - 1).getNodePosition();
+
+        if (previousPosition == null) {
+          LOG.debug(
+              "Skipping theta calculation for node '{}' because the previous node has no position.",
+              currentNode.getNodeId()
+          );
+          continue;
+        }
+
+        theta = Math.atan2(
+            currentPosition.getY() - previousPosition.getY(),
+            currentPosition.getX() - previousPosition.getX()
+        );
+      }
+
+      currentPosition.setTheta(theta);
+    }
+  }
+
+  private void adjustEdgeOrientations(Order order) {
+    for (int i = 0; i < order.getEdges().size(); i++) {
+      // The mapper builds orders as node[0] -> edge[0] -> node[1] -> edge[1] -> node[2]...
+      // If this relation is broken, there is no end node for this edge to calculate from.
+      if (i + 1 >= order.getNodes().size()) {
+        LOG.debug("Skipping orientation calculation for edge without matching end node.");
+        continue;
+      }
+
+      NodePosition startPosition = order.getNodes().get(i).getNodePosition();
+      NodePosition endPosition = order.getNodes().get(i + 1).getNodePosition();
+
+      if (startPosition == null || endPosition == null) {
+        LOG.debug(
+            "Skipping orientation calculation for edge '{}' because a node position is missing.",
+            order.getEdges().get(i).getEdgeId()
+        );
+        continue;
+      }
+
+      order.getEdges().get(i).setOrientation(
+          Math.atan2(
+              endPosition.getY() - startPosition.getY(),
+              endPosition.getX() - startPosition.getX()
+          )
+      );
+    }
+  }
+
+  private Node copyNode(Node node) {
+    Node nodeCopy = new Node(
+        node.getNodeId(),
+        node.getSequenceId(),
+        node.isReleased(),
+        node.getActions()
+    );
+    nodeCopy.setNodeDescription(node.getNodeDescription());
+    nodeCopy.setNodePosition(copyNodePosition(node.getNodePosition()));
+    return nodeCopy;
+  }
+
+  private NodePosition copyNodePosition(NodePosition nodePosition) {
+    if (nodePosition == null) {
+      return null;
+    }
+
+    return new NodePosition(
+        nodePosition.getX(),
+        nodePosition.getY(),
+        nodePosition.getMapId()
+    )
+        .setTheta(nodePosition.getTheta())
+        .setAllowedDeviationXY(nodePosition.getAllowedDeviationXY())
+        .setAllowedDeviationTheta(nodePosition.getAllowedDeviationTheta())
+        .setMapDescription(nodePosition.getMapDescription());
   }
 
   /**
