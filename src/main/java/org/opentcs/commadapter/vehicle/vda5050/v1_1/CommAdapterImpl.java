@@ -237,7 +237,8 @@ public class CommAdapterImpl
         this::sendOrder,
         this::sendInstantAction,
         this::orderAccepted,
-        getPropertyInteger(PROPKEY_VEHICLE_MAX_IGNORED_REJECTIONS, vehicle).orElse(0)
+        getPropertyInteger(PROPKEY_VEHICLE_MAX_IGNORED_REJECTIONS, vehicle).orElse(0),
+        configuration.orderResendTimeoutMs()
     );
 
     getProcessModel().setTopicPrefix(mqttSetting.topicNamePrefix());

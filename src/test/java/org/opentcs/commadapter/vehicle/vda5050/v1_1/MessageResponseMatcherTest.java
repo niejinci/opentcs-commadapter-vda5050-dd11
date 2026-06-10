@@ -16,6 +16,7 @@ import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ErrorTypes.VALIDATION
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -130,6 +131,65 @@ public class MessageResponseMatcherTest {
 
     verify(sendOrderCallback, times(2)).accept(order1);
     verify(orderAcceptedCallback, never()).accept(any());
+  }
+
+  @Test
+  public void suppressOrderRepetitionUntilResendTimeoutExpires() {
+    AtomicLong now = new AtomicLong();
+    MessageResponseMatcher throttledMessageResponseMatcher = new MessageResponseMatcher(
+        "test",
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        0,
+        1000,
+        now::get
+    );
+    throttledMessageResponseMatcher.onStateMessage(newState());
+
+    Order orderNone = new Order("", 0L, List.of(), List.of());
+    Order order1 = new Order("order1", 0L, List.of(), List.of());
+
+    throttledMessageResponseMatcher.enqueueCommand(order1, dummyCommand);
+    verify(sendOrderCallback, times(1)).accept(order1);
+
+    throttledMessageResponseMatcher.onStateMessage(stateAcceptingOrder(orderNone));
+    verify(sendOrderCallback, times(1)).accept(order1);
+
+    now.addAndGet(999);
+    throttledMessageResponseMatcher.onStateMessage(stateAcceptingOrder(orderNone));
+    verify(sendOrderCallback, times(1)).accept(order1);
+
+    now.incrementAndGet();
+    throttledMessageResponseMatcher.onStateMessage(stateAcceptingOrder(orderNone));
+    verify(sendOrderCallback, times(2)).accept(order1);
+    verify(orderAcceptedCallback, never()).accept(any());
+  }
+
+  @Test
+  public void sendNextOrderImmediatelyAfterAcknowledgementRegardlessOfResendTimeout() {
+    AtomicLong now = new AtomicLong();
+    MessageResponseMatcher throttledMessageResponseMatcher = new MessageResponseMatcher(
+        "test",
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        0,
+        1000,
+        now::get
+    );
+    throttledMessageResponseMatcher.onStateMessage(newState());
+
+    Order order1 = new Order("order1", 0L, List.of(), List.of());
+    Order order2 = new Order("order2", 0L, List.of(), List.of());
+
+    throttledMessageResponseMatcher.enqueueCommand(order1, dummyCommand);
+    throttledMessageResponseMatcher.enqueueCommand(order2, dummyCommand);
+    verify(sendOrderCallback, times(1)).accept(order1);
+    verify(sendOrderCallback, never()).accept(order2);
+
+    throttledMessageResponseMatcher.onStateMessage(stateAcceptingOrder(order1));
+    verify(sendOrderCallback, times(1)).accept(order2);
   }
 
   @ParameterizedTest

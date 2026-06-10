@@ -8,6 +8,7 @@ import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import javax.annotation.Nonnull;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.action.CancelOrder;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.Action;
@@ -52,10 +53,26 @@ public class MessageResponseMatcher {
    */
   private final int maxIgnoredRejectionsCount;
   /**
+   * Minimum time to wait before resending an unacknowledged order, in milliseconds.
+   */
+  private final long orderResendTimeoutMs;
+  /**
+   * Provides the current time in milliseconds.
+   */
+  private final LongSupplier currentTimeMillis;
+  /**
    * The number of consecutive state messages that indicate a rejection of the current order/message
    * we have received so far.
    */
   private int consecutiveRejectionsCount;
+  /**
+   * The request most recently sent to the vehicle.
+   */
+  private Object lastSentRequest;
+  /**
+   * The timestamp at which {@link #lastSentRequest} was sent.
+   */
+  private long lastSentRequestTimestamp;
   /**
    * Flag indicating whether this comm adapter may currently send requests to the vehicle.
    * If false, all enqueued requests will stay in the queue until the flag becomes true.
@@ -84,12 +101,73 @@ public class MessageResponseMatcher {
       Consumer<OrderAssociation> orderAcceptedCallback,
       int maxIgnoredRejectionsCount
   ) {
+    this(
+        commAdapterName,
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        maxIgnoredRejectionsCount,
+        0
+    );
+  }
+
+  /**
+   * Creates a new OrderResponseMatcher.
+   *
+   * @param commAdapterName The name of the comm adapter
+   * @param sendOrderCallback The callback for sending the next order.
+   * @param sendInstantActionsCallback The callback for sending instant actions.
+   * @param orderAcceptedCallback The callback for when the order is accepted by the vehicle.
+   * @param maxIgnoredRejectionsCount The maximum number of consecutive state messages that
+   * indicate a rejection of the current order/message before we consider the rejection to be
+   * permanent and stop retrying.
+   * @param orderResendTimeoutMs Minimum interval before resending an unacknowledged order.
+   */
+  public MessageResponseMatcher(
+      @Nonnull
+      String commAdapterName,
+      @Nonnull
+      Consumer<Order> sendOrderCallback,
+      @Nonnull
+      Consumer<InstantActions> sendInstantActionsCallback,
+      @Nonnull
+      Consumer<OrderAssociation> orderAcceptedCallback,
+      int maxIgnoredRejectionsCount,
+      long orderResendTimeoutMs
+  ) {
+    this(
+        commAdapterName,
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        maxIgnoredRejectionsCount,
+        orderResendTimeoutMs,
+        System::currentTimeMillis
+    );
+  }
+
+  MessageResponseMatcher(
+      @Nonnull
+      String commAdapterName,
+      @Nonnull
+      Consumer<Order> sendOrderCallback,
+      @Nonnull
+      Consumer<InstantActions> sendInstantActionsCallback,
+      @Nonnull
+      Consumer<OrderAssociation> orderAcceptedCallback,
+      int maxIgnoredRejectionsCount,
+      long orderResendTimeoutMs,
+      @Nonnull
+      LongSupplier currentTimeMillis
+  ) {
     this.commAdapterName = requireNonNull(commAdapterName, "commAdapterName");
     this.sendOrderCallback = requireNonNull(sendOrderCallback, "sendOrderCallback");
     this.sendInstantActionsCallback
         = requireNonNull(sendInstantActionsCallback, "sendInstantActionsCallback");
     this.orderAcceptedCallback = requireNonNull(orderAcceptedCallback, "orderAcceptedCallback");
     this.maxIgnoredRejectionsCount = maxIgnoredRejectionsCount;
+    this.orderResendTimeoutMs = Math.max(orderResendTimeoutMs, 0);
+    this.currentTimeMillis = requireNonNull(currentTimeMillis, "currentTimeMillis");
   }
 
   public void enqueueCommand(Order order, MovementCommand command) {
@@ -123,6 +201,8 @@ public class MessageResponseMatcher {
   public void clear() {
     requests.clear();
     consecutiveRejectionsCount = 0;
+    lastSentRequest = null;
+    lastSentRequestTimestamp = 0;
   }
 
   public void onStateMessage(
@@ -201,6 +281,10 @@ public class MessageResponseMatcher {
     }
 
     Object request = requests.peek();
+    if (!requestResendAllowed(request)) {
+      return;
+    }
+
     LOG.debug("{}: Sending order to comm adapter: {}", commAdapterName, request);
     if (request instanceof OrderAssociation) {
       sendOrderCallback.accept(((OrderAssociation) request).getOrder());
@@ -215,6 +299,29 @@ public class MessageResponseMatcher {
           request.getClass().getName()
       );
     }
+    lastSentRequest = request;
+    lastSentRequestTimestamp = currentTimeMillis.getAsLong();
+  }
+
+  private boolean requestResendAllowed(Object request) {
+    if (!(request instanceof OrderAssociation)
+        || orderResendTimeoutMs == 0
+        || !Objects.equals(request, lastSentRequest)) {
+      return true;
+    }
+
+    long elapsedMs = currentTimeMillis.getAsLong() - lastSentRequestTimestamp;
+    if (elapsedMs >= orderResendTimeoutMs) {
+      return true;
+    }
+
+    LOG.trace(
+        "{}: Not resending order yet, last send was {} ms ago. Configured timeout: {} ms.",
+        commAdapterName,
+        elapsedMs,
+        orderResendTimeoutMs
+    );
+    return false;
   }
 
   private boolean orderAccepted(Order order, State state) {

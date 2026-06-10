@@ -48,6 +48,9 @@ Set to a map of VDA5050 operating mode names to boolean values.
 Whenever the vehicle's reported operating mode changes to a value given in the map, the vehicle's last known position may be reset.
 Valid values for operating mode names are `TEACHIN`, `SERVICE`, `MANUAL`, `SEMIAUTOMATIC` and `AUTOMATIC`.
 Valid assignment values are 'true' (do reset the last known position) and 'false' (do not reset the last known position), with 'false' being the default for every operating mode.
+`commadapter.vehicle.vda5050.orderResendTimeoutMs`::
+The minimum interval (in ms) before an unacknowledged order is resent.
+Set to `0` to keep the legacy behaviour of retrying on every state message until the order is acknowledged.
 `commadapter.vehicle.vda5050.mqtt.brokerHost`::
 The IP address or host name of the MQTT broker to be used.
 `commadapter.vehicle.vda5050.mqtt.brokerPort`::
@@ -79,6 +82,7 @@ commadapter.vehicle.vda5050.enabledVersions = 1.1, 2.0
 commadapter.vehicle.vda5050.onOpModeChangeDoUpdateIntegrationLevel = AUTOMATIC=LEAVE_UNCHANGED, SEMIAUTOMATIC=LEAVE_UNCHANGED, SERVICE=LEAVE_UNCHANGED, MANUAL=LEAVE_UNCHANGED, TEACHIN=LEAVE_UNCHANGED
 commadapter.vehicle.vda5050.onOpModeChangeDoWithdrawOrder = AUTOMATIC=false, SEMIAUTOMATIC=false, SERVICE=false, MANUAL=true, TEACHIN=false
 commadapter.vehicle.vda5050.onOpModeChangeDoResetPosition = AUTOMATIC=false, SEMIAUTOMATIC=false, SERVICE=false, MANUAL=false, TEACHIN=false
+commadapter.vehicle.vda5050.orderResendTimeoutMs = 1000
 commadapter.vehicle.vda5050.mqtt.brokerHost = broker.example.com
 commadapter.vehicle.vda5050.mqtt.brokerPort = 1883
 commadapter.vehicle.vda5050.mqtt.connectionEncrypted = false

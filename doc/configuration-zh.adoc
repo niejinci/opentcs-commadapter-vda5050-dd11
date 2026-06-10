@@ -48,6 +48,9 @@ toc::[]
 每当车辆报告的运行模式更改为映射中给定的值时，车辆的最后已知位置可能会被重置。
 运行模式名称的有效值为 `TEACHIN`、`SERVICE`、`MANUAL`、`SEMIAUTOMATIC` 和 `AUTOMATIC`。
 有效的赋值为 'true'（重置最后已知位置）和 'false'（不重置最后已知位置），其中 'false' 是每个运行模式的默认值。
+`commadapter.vehicle.vda5050.orderResendTimeoutMs`::
+未确认订单再次发送前的最小间隔（以毫秒为单位）。
+设置为 `0` 时保留旧行为，即每收到一帧 state 都可以重试，直到订单被确认。
 `commadapter.vehicle.vda5050.mqtt.brokerHost`::
 要使用的 MQTT 代理 (broker) 的 IP 地址或主机名。
 `commadapter.vehicle.vda5050.mqtt.brokerPort`::
@@ -79,6 +82,7 @@ commadapter.vehicle.vda5050.enabledVersions = 1.1, 2.0
 commadapter.vehicle.vda5050.onOpModeChangeDoUpdateIntegrationLevel = AUTOMATIC=LEAVE_UNCHANGED, SEMIAUTOMATIC=LEAVE_UNCHANGED, SERVICE=LEAVE_UNCHANGED, MANUAL=LEAVE_UNCHANGED, TEACHIN=LEAVE_UNCHANGED
 commadapter.vehicle.vda5050.onOpModeChangeDoWithdrawOrder = AUTOMATIC=false, SEMIAUTOMATIC=false, SERVICE=false, MANUAL=true, TEACHIN=false
 commadapter.vehicle.vda5050.onOpModeChangeDoResetPosition = AUTOMATIC=false, SEMIAUTOMATIC=false, SERVICE=false, MANUAL=false, TEACHIN=false
+commadapter.vehicle.vda5050.orderResendTimeoutMs = 1000
 commadapter.vehicle.vda5050.mqtt.brokerHost = broker.example.com
 commadapter.vehicle.vda5050.mqtt.brokerPort = 1883
 commadapter.vehicle.vda5050.mqtt.connectionEncrypted = false

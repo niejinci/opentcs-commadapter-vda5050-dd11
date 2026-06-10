@@ -48,6 +48,14 @@ public interface CommAdapterConfiguration {
   )
   Map<ConfigOperatingMode, Boolean> onOpModeChangeDoResetPosition();
 
+  @ConfigurationEntry(
+      type = "Milliseconds",
+      description = "Minimum interval before resending an unacknowledged order. "
+          + "A value of 0 disables throttling.",
+      orderKey = "2_1_orderResendTimeout"
+  )
+  long orderResendTimeoutMs();
+
   /**
    * Vehicle operating modes.
    */
