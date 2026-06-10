@@ -374,6 +374,15 @@ public class OrderMapper {
 
   private void adjustEdgeOrientations(Order order) {
     for (int i = 0; i < order.getEdges().size(); i++) {
+      Edge currentEdge = order.getEdges().get(i);
+      if (currentEdge.getOrientation() != null) {
+        LOG.debug(
+            "Skipping orientation calculation for edge '{}' with explicit orientation.",
+            currentEdge.getEdgeId()
+        );
+        continue;
+      }
+
       // The mapper builds orders as node[0] -> edge[0] -> node[1] -> edge[1] -> node[2]...
       // If this relation is broken, there is no end node for this edge to calculate from.
       if (i + 1 >= order.getNodes().size()) {
@@ -387,12 +396,12 @@ public class OrderMapper {
       if (startPosition == null || endPosition == null) {
         LOG.debug(
             "Skipping orientation calculation for edge '{}' because a node position is missing.",
-            order.getEdges().get(i).getEdgeId()
+            currentEdge.getEdgeId()
         );
         continue;
       }
 
-      order.getEdges().get(i).setOrientation(
+      currentEdge.setOrientation(
           Math.atan2(
               endPosition.getY() - startPosition.getY(),
               endPosition.getX() - startPosition.getX()

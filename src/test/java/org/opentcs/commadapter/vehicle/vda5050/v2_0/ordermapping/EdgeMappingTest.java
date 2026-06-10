@@ -6,8 +6,11 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_FORWARD;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_REVERSE;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_TYPE_FORWARD;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_TYPE_REVERSE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ROTATION_ALLOWED_FORWARD;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ROTATION_ALLOWED_REVERSE;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_VEHICLE_ORIENTATION;
 
 import java.util.List;
 import java.util.Map;
@@ -66,6 +69,7 @@ public class EdgeMappingTest {
         .withProperties(
             Map.of(
                 PROPKEY_PATH_ORIENTATION_FORWARD, String.valueOf(12.34),
+                PROPKEY_PATH_ORIENTATION_TYPE_FORWARD, "GLOBAL",
                 PROPKEY_PATH_ROTATION_ALLOWED_FORWARD, String.valueOf(true)
             )
         );
@@ -82,6 +86,7 @@ public class EdgeMappingTest {
     Edge edge = EdgeMapping.toBaseEdge(step, vehicle, List.of());
     assertThat(edge.getMaxSpeed(), is(0.7));
     assertThat(edge.getOrientation(), is(Math.toRadians(12.34)));
+    assertThat(edge.getOrientationType(), is("GLOBAL"));
     assertThat(edge.getRotationAllowed(), is(true));
   }
 
@@ -93,6 +98,7 @@ public class EdgeMappingTest {
         .withProperties(
             Map.of(
                 PROPKEY_PATH_ORIENTATION_REVERSE, String.valueOf(12.34),
+                PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, "GLOBAL",
                 PROPKEY_PATH_ROTATION_ALLOWED_REVERSE, String.valueOf(true)
             )
         );
@@ -108,7 +114,39 @@ public class EdgeMappingTest {
     Edge edge = EdgeMapping.toBaseEdge(step, vehicle, List.of());
     assertThat(edge.getMaxSpeed(), is(0.35));
     assertThat(edge.getOrientation(), is(Math.toRadians(12.34)));
+    assertThat(edge.getOrientationType(), is("GLOBAL"));
     assertThat(edge.getRotationAllowed(), is(true));
+  }
+
+  @Test
+  public void shouldUseConfiguredPathVehicleOrientation() {
+    path = path
+        .withMaxVelocity(700)
+        .withMaxReverseVelocity(350)
+        .withProperties(
+            Map.of(
+                PROPKEY_PATH_VEHICLE_ORIENTATION, "BACKWARD",
+                PROPKEY_PATH_ORIENTATION_REVERSE, String.valueOf(180.0),
+                PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, "GLOBAL",
+                PROPKEY_PATH_ROTATION_ALLOWED_REVERSE, String.valueOf(false)
+            )
+        );
+
+    Step step = new Route.Step(
+        path,
+        source,
+        dest,
+        Vehicle.Orientation.FORWARD,
+        0,
+        1
+    );
+
+    Edge edge = EdgeMapping.toBaseEdge(step, vehicle, List.of());
+
+    assertThat(edge.getMaxSpeed(), is(0.35));
+    assertThat(edge.getOrientation(), is(Math.toRadians(180.0)));
+    assertThat(edge.getOrientationType(), is("GLOBAL"));
+    assertThat(edge.getRotationAllowed(), is(false));
   }
 
   @Test

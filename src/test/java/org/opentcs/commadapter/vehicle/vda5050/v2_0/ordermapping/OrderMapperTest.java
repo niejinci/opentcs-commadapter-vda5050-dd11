@@ -474,7 +474,7 @@ public class OrderMapperTest {
 
     assertThat(order.getNodes().get(0).getNodePosition().getTheta(), closeTo(Math.PI / 2, 0.00001));
     assertThat(order.getNodes().get(1).getNodePosition().getTheta(), closeTo(0.0, 0.00001));
-    assertThat(order.getEdges().get(0).getOrientation(), closeTo(0.0, 0.00001));
+    assertThat(order.getEdges().get(0).getOrientation(), closeTo(Math.toRadians(45.0), 0.00001));
   }
 
   @Test

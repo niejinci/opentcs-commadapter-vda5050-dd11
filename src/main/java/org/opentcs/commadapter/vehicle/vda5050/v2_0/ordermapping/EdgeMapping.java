@@ -10,10 +10,13 @@ import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROP
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_REVERSE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_TYPE_FORWARD;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_TYPE_REVERSE;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_VEHICLE_ORIENTATION;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ROTATION_ALLOWED_FORWARD;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ROTATION_ALLOWED_REVERSE;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.Action;
@@ -97,7 +100,7 @@ public class EdgeMapping {
 
   @Nonnull
   private static Double maxSpeed(Route.Step step) {
-    if (step.getVehicleOrientation() == Vehicle.Orientation.BACKWARD) {
+    if (vehicleOrientation(step) == Vehicle.Orientation.BACKWARD) {
       return step.getPath().getMaxReverseVelocity() / 1000.0;
     }
     else {
@@ -107,7 +110,7 @@ public class EdgeMapping {
 
   @Nullable
   private static Double edgeOrientation(Route.Step step) {
-    if (step.getVehicleOrientation() == Vehicle.Orientation.BACKWARD) {
+    if (vehicleOrientation(step) == Vehicle.Orientation.BACKWARD) {
       return getPropertyDouble(PROPKEY_PATH_ORIENTATION_REVERSE, step.getPath())
           .map(value -> toRadians(value))
           .orElse(null);
@@ -121,7 +124,7 @@ public class EdgeMapping {
 
   @Nullable
   private static Boolean rotationAllowed(Route.Step step) {
-    if (step.getVehicleOrientation() == Vehicle.Orientation.BACKWARD) {
+    if (vehicleOrientation(step) == Vehicle.Orientation.BACKWARD) {
       return getProperty(PROPKEY_PATH_ROTATION_ALLOWED_REVERSE, step.getPath())
           .map(value -> Boolean.valueOf(value))
           .orElse(null);
@@ -135,11 +138,40 @@ public class EdgeMapping {
 
   @Nullable
   private static String edgeOrientationType(Route.Step step) {
-    if (step.getVehicleOrientation() == Vehicle.Orientation.BACKWARD) {
+    if (vehicleOrientation(step) == Vehicle.Orientation.BACKWARD) {
       return getProperty(PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, step.getPath()).orElse(null);
     }
     else {
       return getProperty(PROPKEY_PATH_ORIENTATION_TYPE_FORWARD, step.getPath()).orElse(null);
     }
+  }
+
+  private static Vehicle.Orientation vehicleOrientation(Route.Step step) {
+    return getProperty(PROPKEY_PATH_VEHICLE_ORIENTATION, step.getPath())
+        .flatMap(EdgeMapping::vehicleOrientation)
+        .orElse(step.getVehicleOrientation());
+  }
+
+  private static Optional<Vehicle.Orientation> vehicleOrientation(String value) {
+    String normalizedValue = value.trim().toUpperCase(Locale.ROOT);
+
+    if (normalizedValue.isEmpty() || normalizedValue.equals("AUTO")) {
+      return Optional.empty();
+    }
+
+    if (normalizedValue.equals("FORWARD")) {
+      return Optional.of(Vehicle.Orientation.FORWARD);
+    }
+
+    if (normalizedValue.equals("BACKWARD") || normalizedValue.equals("REVERSE")) {
+      return Optional.of(Vehicle.Orientation.BACKWARD);
+    }
+
+    throw new IllegalArgumentException(
+        "Unsupported path property "
+            + PROPKEY_PATH_VEHICLE_ORIENTATION
+            + " value: "
+            + value
+    );
   }
 }

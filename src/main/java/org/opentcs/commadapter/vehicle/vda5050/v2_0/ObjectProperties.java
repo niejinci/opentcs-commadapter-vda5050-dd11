@@ -195,6 +195,10 @@ public interface ObjectProperties {
    */
   String PROPKEY_PATH_ORIENTATION_REVERSE = "vda5050:orientation.reverse";
   /**
+   * The vehicle orientation on a path/edge. Valid values are FORWARD and BACKWARD.
+   */
+  String PROPKEY_PATH_VEHICLE_ORIENTATION = "vda5050:vehicleOrientation";
+  /**
    * The key of the property indicating whether vehicle rotation is allowed on a path/edge with
    * forward movement.
    */
