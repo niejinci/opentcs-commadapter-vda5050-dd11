@@ -323,8 +323,8 @@ public class OrderMapper {
   }
 
   private void adjustOrientations(Order order, Vehicle vehicle) {
-    adjustNodeThetas(order, vehicle);
     adjustEdgeOrientations(order);
+    adjustNodeThetas(order, vehicle);
   }
 
   private void adjustNodeThetas(Order order, Vehicle vehicle) {
@@ -337,6 +337,12 @@ public class OrderMapper {
             "Skipping theta calculation for node '{}' without a node position.",
             currentNode.getNodeId()
         );
+        continue;
+      }
+
+      Optional<Double> thetaFromEdge = nodeThetaFromAdjacentEdge(order, i);
+      if (thetaFromEdge.isPresent()) {
+        currentPosition.setTheta(thetaFromEdge.get());
         continue;
       }
 
@@ -372,6 +378,71 @@ public class OrderMapper {
     }
   }
 
+  private Optional<Double> nodeThetaFromAdjacentEdge(Order order, int nodeIndex) {
+    if (nodeIndex > 0) {
+      Optional<Double> incomingEdgeOrientation = absoluteEdgeOrientation(order, nodeIndex - 1);
+      if (incomingEdgeOrientation.isPresent()) {
+        return incomingEdgeOrientation;
+      }
+    }
+
+    if (nodeIndex < order.getEdges().size()) {
+      return absoluteEdgeOrientation(order, nodeIndex);
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<Double> absoluteEdgeOrientation(Order order, int edgeIndex) {
+    Edge edge = order.getEdges().get(edgeIndex);
+    if (edge.getOrientation() == null) {
+      return Optional.empty();
+    }
+
+    if ("GLOBAL".equalsIgnoreCase(edge.getOrientationType())) {
+      return Optional.of(edge.getOrientation());
+    }
+
+    if (edge.getOrientationType() == null || "TANGENTIAL".equalsIgnoreCase(edge.getOrientationType())) {
+      if (edgeIndex + 1 >= order.getNodes().size()) {
+        return Optional.empty();
+      }
+
+      NodePosition startPosition = order.getNodes().get(edgeIndex).getNodePosition();
+      NodePosition endPosition = order.getNodes().get(edgeIndex + 1).getNodePosition();
+
+      if (startPosition == null || endPosition == null) {
+        return Optional.empty();
+      }
+
+      return Optional.of(
+          normalizeAngle(
+              Math.atan2(
+                  endPosition.getY() - startPosition.getY(),
+                  endPosition.getX() - startPosition.getX()
+              )
+                  + edge.getOrientation()
+          )
+      );
+    }
+
+    return Optional.empty();
+  }
+
+  private double normalizeAngle(double angle) {
+    double normalizedAngle = angle;
+
+    while (normalizedAngle > Math.PI) {
+      normalizedAngle -= 2.0 * Math.PI;
+    }
+
+    while (normalizedAngle <= -Math.PI) {
+      normalizedAngle += 2.0 * Math.PI;
+    }
+
+    return normalizedAngle;
+  }
+
   private void adjustEdgeOrientations(Order order) {
     for (int i = 0; i < order.getEdges().size(); i++) {
       Edge currentEdge = order.getEdges().get(i);
@@ -401,12 +472,24 @@ public class OrderMapper {
         continue;
       }
 
+      if (
+          currentEdge.getOrientationType() != null
+              && !currentEdge.getOrientationType().equalsIgnoreCase("GLOBAL")
+      ) {
+        LOG.debug(
+            "Skipping orientation calculation for edge '{}' with non-global orientation type.",
+            currentEdge.getEdgeId()
+        );
+        continue;
+      }
+
       currentEdge.setOrientation(
           Math.atan2(
               endPosition.getY() - startPosition.getY(),
               endPosition.getX() - startPosition.getX()
           )
       );
+      currentEdge.setOrientationType("GLOBAL");
     }
   }
 

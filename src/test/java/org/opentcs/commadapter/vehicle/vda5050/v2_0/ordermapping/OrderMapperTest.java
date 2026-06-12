@@ -15,6 +15,7 @@ import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROP
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_CUSTOM_DEST_ACTION_PREFIX;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_EXECUTABLE_ACTIONS_TAGS;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_FORWARD;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_PATH_ORIENTATION_TYPE_FORWARD;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -472,9 +473,42 @@ public class OrderMapperTest {
 
     Order order = mapper.toOrder(command);
 
-    assertThat(order.getNodes().get(0).getNodePosition().getTheta(), closeTo(Math.PI / 2, 0.00001));
-    assertThat(order.getNodes().get(1).getNodePosition().getTheta(), closeTo(0.0, 0.00001));
     assertThat(order.getEdges().get(0).getOrientation(), closeTo(Math.toRadians(45.0), 0.00001));
+    assertThat(
+        order.getNodes().get(0).getNodePosition().getTheta(),
+        closeTo(Math.toRadians(45.0), 0.00001)
+    );
+    assertThat(
+        order.getNodes().get(1).getNodePosition().getTheta(),
+        closeTo(Math.toRadians(45.0), 0.00001)
+    );
+  }
+
+  @Test
+  public void alignInitialNodeThetaWithForwardGlobalEdgeOrientation() {
+    vehicle = vehicle.withPose(new Pose(new Triple(11407, -7193, 0), Double.NaN));
+    when(objectService.fetch(Vehicle.class, vehicle.getReference()))
+        .thenReturn(Optional.of(vehicle));
+
+    Point source = new Point("Point-7");
+    source = source.withPose(source.getPose().withPosition(new Triple(11407, -7193, 0)));
+    Point dest = new Point("Point-8");
+    dest = dest.withPose(dest.getPose().withPosition(new Triple(9400, -7188, 0)));
+    Path path = new Path("Point-7 --- Point-8", source.getReference(), dest.getReference())
+        .withMaxVelocity(1000)
+        .withMaxReverseVelocity(200)
+        .withProperty(PROPKEY_PATH_ORIENTATION_TYPE_FORWARD, "GLOBAL");
+    MovementCommand command = createMovementCommandWithStep(
+        new Step(path, source, dest, Orientation.FORWARD, 0, 1)
+    );
+
+    Order order = mapper.toOrder(command);
+    double expectedTheta = Math.atan2(-7188.0 - -7193.0, 9400.0 - 11407.0);
+
+    assertThat(order.getEdges().get(0).getOrientation(), closeTo(expectedTheta, 0.00001));
+    assertThat(order.getEdges().get(0).getOrientationType(), is("GLOBAL"));
+    assertThat(order.getNodes().get(0).getNodePosition().getTheta(), closeTo(expectedTheta, 0.00001));
+    assertThat(order.getNodes().get(1).getNodePosition().getTheta(), closeTo(expectedTheta, 0.00001));
   }
 
   @Test
