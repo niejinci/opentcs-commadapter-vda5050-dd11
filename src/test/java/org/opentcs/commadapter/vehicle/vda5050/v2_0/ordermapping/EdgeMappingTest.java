@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Edge;
 import org.opentcs.data.model.Path;
 import org.opentcs.data.model.Point;
+import org.opentcs.data.model.Triple;
 import org.opentcs.data.model.Vehicle;
 import org.opentcs.data.order.Route;
 import org.opentcs.data.order.Route.Step;
@@ -147,6 +148,94 @@ public class EdgeMappingTest {
     assertThat(edge.getOrientation(), is(Math.toRadians(180.0)));
     assertThat(edge.getOrientationType(), is("GLOBAL"));
     assertThat(edge.getRotationAllowed(), is(false));
+  }
+
+  @Test
+  public void shouldCalculateReverseOrientationForGlobalOrientationType() {
+    source = source.withPose(source.getPose().withPosition(new Triple(9395, -7174, 0)));
+    dest = dest.withPose(dest.getPose().withPosition(new Triple(11400, -7200, 0)));
+    path = path
+        .withMaxVelocity(700)
+        .withMaxReverseVelocity(350)
+        .withProperties(
+            Map.of(
+                PROPKEY_PATH_VEHICLE_ORIENTATION, "BACKWARD",
+                PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, "GLOBAL"
+            )
+        );
+
+    Step step = new Route.Step(
+        path,
+        source,
+        dest,
+        Vehicle.Orientation.FORWARD,
+        0,
+        1
+    );
+
+    Edge edge = EdgeMapping.toBaseEdge(step, vehicle, List.of());
+
+    assertThat(
+        edge.getOrientation(),
+        is(Math.atan2(-7200.0 - -7174.0, 11400.0 - 9395.0) + Math.PI)
+    );
+  }
+
+  @Test
+  public void shouldPreferConfiguredReverseOrientationOverCalculatedOrientation() {
+    source = source.withPose(source.getPose().withPosition(new Triple(9395, -7174, 0)));
+    dest = dest.withPose(dest.getPose().withPosition(new Triple(11400, -7200, 0)));
+    path = path
+        .withMaxVelocity(700)
+        .withMaxReverseVelocity(350)
+        .withProperties(
+            Map.of(
+                PROPKEY_PATH_VEHICLE_ORIENTATION, "BACKWARD",
+                PROPKEY_PATH_ORIENTATION_REVERSE, String.valueOf(12.34),
+                PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, "GLOBAL"
+            )
+        );
+
+    Step step = new Route.Step(
+        path,
+        source,
+        dest,
+        Vehicle.Orientation.FORWARD,
+        0,
+        1
+    );
+
+    Edge edge = EdgeMapping.toBaseEdge(step, vehicle, List.of());
+
+    assertThat(edge.getOrientation(), is(Math.toRadians(12.34)));
+  }
+
+  @Test
+  public void shouldNotCalculateReverseOrientationForNonGlobalOrientationType() {
+    source = source.withPose(source.getPose().withPosition(new Triple(9395, -7174, 0)));
+    dest = dest.withPose(dest.getPose().withPosition(new Triple(11400, -7200, 0)));
+    path = path
+        .withMaxVelocity(700)
+        .withMaxReverseVelocity(350)
+        .withProperties(
+            Map.of(
+                PROPKEY_PATH_VEHICLE_ORIENTATION, "BACKWARD",
+                PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, "TANGENTIAL"
+            )
+        );
+
+    Step step = new Route.Step(
+        path,
+        source,
+        dest,
+        Vehicle.Orientation.FORWARD,
+        0,
+        1
+    );
+
+    Edge edge = EdgeMapping.toBaseEdge(step, vehicle, List.of());
+
+    assertThat(edge.getOrientation(), is((Double) null));
   }
 
   @Test

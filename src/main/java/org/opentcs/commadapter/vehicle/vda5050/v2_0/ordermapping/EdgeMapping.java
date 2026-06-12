@@ -113,7 +113,7 @@ public class EdgeMapping {
     if (vehicleOrientation(step) == Vehicle.Orientation.BACKWARD) {
       return getPropertyDouble(PROPKEY_PATH_ORIENTATION_REVERSE, step.getPath())
           .map(value -> toRadians(value))
-          .orElse(null);
+          .orElseGet(() -> calculatedReverseOrientation(step).orElse(null));
     }
     else {
       return getPropertyDouble(PROPKEY_PATH_ORIENTATION_FORWARD, step.getPath())
@@ -173,5 +173,42 @@ public class EdgeMapping {
             + " value: "
             + value
     );
+  }
+
+  private static Optional<Double> calculatedReverseOrientation(Route.Step step) {
+    if (!usesGlobalReverseOrientation(step)) {
+      return Optional.empty();
+    }
+
+    double deltaX = step.getDestinationPoint().getPose().getPosition().getX()
+        - step.getSourcePoint().getPose().getPosition().getX();
+    double deltaY = step.getDestinationPoint().getPose().getPosition().getY()
+        - step.getSourcePoint().getPose().getPosition().getY();
+
+    if (deltaX == 0.0 && deltaY == 0.0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(normalizeAngle(Math.atan2(deltaY, deltaX) + Math.PI));
+  }
+
+  private static boolean usesGlobalReverseOrientation(Route.Step step) {
+    return getProperty(PROPKEY_PATH_ORIENTATION_TYPE_REVERSE, step.getPath())
+        .map(value -> value.trim().equalsIgnoreCase("GLOBAL"))
+        .orElse(false);
+  }
+
+  private static double normalizeAngle(double angle) {
+    double normalizedAngle = angle;
+
+    while (normalizedAngle > Math.PI) {
+      normalizedAngle -= 2.0 * Math.PI;
+    }
+
+    while (normalizedAngle <= -Math.PI) {
+      normalizedAngle += 2.0 * Math.PI;
+    }
+
+    return normalizedAngle;
   }
 }
