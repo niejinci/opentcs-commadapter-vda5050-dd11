@@ -644,7 +644,17 @@ public class CommAdapterImpl
 
     if (state.getLastNodeId() != null && !state.getLastNodeId().isBlank()) {
       String newVehiclePosition = state.getLastNodeId();
-      if (!Objects.equals(newVehiclePosition, getProcessModel().getPosition())) {
+      if (!reportedPositionRelevantForSentCommands(newVehiclePosition)) {
+        LOG.debug(
+            "{}: Ignoring reported position {} while waiting for one of: {}",
+            getName(),
+            newVehiclePosition,
+            getSentCommands().stream()
+                .map(command -> command.getStep().getDestinationPoint().getName())
+                .collect(Collectors.toList())
+        );
+      }
+      else if (!Objects.equals(newVehiclePosition, getProcessModel().getPosition())) {
         LOG.debug("{}: Vehicle is now at point {}", getName(), newVehiclePosition);
         getProcessModel().setPosition(newVehiclePosition);
       }
@@ -685,6 +695,19 @@ public class CommAdapterImpl
     processVehicleOperatingMode(state);
 
     movementCommandManager.onStateMessage(state, this::onMovementCommandExecuted);
+  }
+
+  private boolean reportedPositionRelevantForSentCommands(String reportedPosition) {
+    requireNonNull(reportedPosition, "reportedPosition");
+
+    return getSentCommands().isEmpty()
+        || getSentCommands().stream()
+            .anyMatch(
+                command -> Objects.equals(
+                    command.getStep().getDestinationPoint().getName(),
+                    reportedPosition
+                )
+            );
   }
 
   private void onMovementCommandExecuted(
