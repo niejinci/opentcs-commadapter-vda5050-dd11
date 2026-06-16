@@ -644,14 +644,13 @@ public class CommAdapterImpl
 
     if (state.getLastNodeId() != null && !state.getLastNodeId().isBlank()) {
       String newVehiclePosition = state.getLastNodeId();
-      if (!reportedPositionRelevantForSentCommands(newVehiclePosition)) {
+      List<String> expectedPositions = outstandingCommandDestinationPointNames();
+      if (!reportedPositionRelevantForOutstandingCommands(newVehiclePosition, expectedPositions)) {
         LOG.debug(
             "{}: Ignoring reported position {} while waiting for one of: {}",
             getName(),
             newVehiclePosition,
-            getSentCommands().stream()
-                .map(command -> command.getStep().getDestinationPoint().getName())
-                .collect(Collectors.toList())
+            expectedPositions
         );
       }
       else if (!Objects.equals(newVehiclePosition, getProcessModel().getPosition())) {
@@ -697,17 +696,21 @@ public class CommAdapterImpl
     movementCommandManager.onStateMessage(state, this::onMovementCommandExecuted);
   }
 
-  private boolean reportedPositionRelevantForSentCommands(String reportedPosition) {
+  private boolean reportedPositionRelevantForOutstandingCommands(
+      String reportedPosition,
+      List<String> expectedPositions
+  ) {
     requireNonNull(reportedPosition, "reportedPosition");
+    requireNonNull(expectedPositions, "expectedPositions");
 
-    return getSentCommands().isEmpty()
-        || getSentCommands().stream()
-            .anyMatch(
-                command -> Objects.equals(
-                    command.getStep().getDestinationPoint().getName(),
-                    reportedPosition
-                )
-            );
+    return expectedPositions.isEmpty()
+        || expectedPositions.contains(reportedPosition);
+  }
+
+  private List<String> outstandingCommandDestinationPointNames() {
+    return Stream.concat(getUnsentCommands().stream(), getSentCommands().stream())
+        .map(command -> command.getStep().getDestinationPoint().getName())
+        .collect(Collectors.toList());
   }
 
   private void onMovementCommandExecuted(
