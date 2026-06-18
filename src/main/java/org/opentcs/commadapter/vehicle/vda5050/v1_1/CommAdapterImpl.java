@@ -439,6 +439,7 @@ public class CommAdapterImpl
     switch (message.getType()) {
       case CommAdapterMessages.SEND_ORDER_TYPE -> handleSendOrder(message);
       case CommAdapterMessages.SEND_INSTANT_ACTION_TYPE -> handleSendInstantAction(message);
+      case CommAdapterMessages.SEND_INSTANT_ACTIONS_TYPE -> handleSendInstantActions(message);
       case CommAdapterMessages.EXTEND_DEVIATION_ONCE_TYPE -> handleExtendDeviationOnce();
       default -> LOG.warn("Ignoring unknown message type: {}", message.getType());
     }
@@ -857,6 +858,11 @@ public class CommAdapterImpl
                 new InstantActions().setInstantActions(List.of(action))
             )
         );
+  }
+
+  private void handleSendInstantActions(VehicleCommAdapterMessage message) {
+    commAdapterMessageMapper.toInstantActions(message)
+        .ifPresent(messageResponseMatcher::enqueueAction);
   }
 
   private void handleExtendDeviationOnce() {

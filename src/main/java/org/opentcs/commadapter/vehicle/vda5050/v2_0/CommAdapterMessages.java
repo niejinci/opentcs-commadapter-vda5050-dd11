@@ -20,6 +20,16 @@ public class CommAdapterMessages {
    */
   public static final String SEND_INSTANT_ACTION_TYPE = "vda5050:sendInstantAction";
   /**
+   * A message for sending an {@link InstantActions} message with one or more {@link Action}s.
+   * The actions are passed as a JSON array so action parameter values can retain their native
+   * JSON types (string, number, boolean, array).
+   */
+  public static final String SEND_INSTANT_ACTIONS_TYPE = "vda5050:sendInstantActions";
+  /**
+   * A parameter containing the JSON array of actions to send.
+   */
+  public static final String SEND_INSTANT_ACTIONS_PARAM_ACTIONS = "actions";
+  /**
    * A parameter for the action type.
    * The parameter's value must be set to a string value.
    */

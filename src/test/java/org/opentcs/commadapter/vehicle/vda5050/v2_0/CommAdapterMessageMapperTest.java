@@ -11,6 +11,7 @@ import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.S
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_ACTION_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_BLOCKING_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_PARAMETER_PREFIX;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTIONS_PARAM_ACTIONS;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_DESTINATION_NODE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_DESTINATION_NODE_ACTION_BLOCKING_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_DESTINATION_NODE_ACTION_DESCRIPTION;
@@ -22,6 +23,7 @@ import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.S
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_ORDER_UPDATE_ID;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_SOURCE_NODE;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -152,6 +154,53 @@ class CommAdapterMessageMapperTest {
                   tuple("action-param-1", "value-1"),
                   tuple("action-param-2", "value-2")
               );
+        });
+  }
+
+  @Test
+  void mapToInstantActionsWithNativeJsonParameterValues() {
+    VehicleCommAdapterMessage message = new VehicleCommAdapterMessage(
+        CommAdapterMessages.SEND_INSTANT_ACTIONS_TYPE,
+        Map.of(
+            SEND_INSTANT_ACTIONS_PARAM_ACTIONS,
+            """
+            [
+              {
+                "actionType": "typed-action",
+                "actionId": "action-id",
+                "blockingType": "HARD",
+                "actionParameters": [
+                  {"key": "number-param", "value": 1.5},
+                  {"key": "boolean-param", "value": true},
+                  {"key": "array-param", "value": ["a", 2, false]}
+                ]
+              }
+            ]
+            """
+        )
+    );
+
+    var result = mapper.toInstantActions(message);
+
+    assertThat(result)
+        .hasValueSatisfying(instantActions -> {
+          assertThat(instantActions.getActions()).hasSize(1);
+          Action action = instantActions.getActions().getFirst();
+          assertThat(action.getActionType()).isEqualTo("typed-action");
+          assertThat(action.getActionId()).isEqualTo("action-id");
+          assertThat(action.getBlockingType()).isEqualTo(BlockingType.HARD);
+          assertThat(action.getActionParameters())
+              .extracting(ActionParameter::getKey, ActionParameter::getValue)
+              .contains(
+                  tuple("number-param", 1.5),
+                  tuple("boolean-param", true)
+              );
+          assertThat(action.getActionParameters().get(2).getKey()).isEqualTo("array-param");
+          List<?> arrayValue = (List<?>) action.getActionParameters().get(2).getValue();
+          assertThat(arrayValue).hasSize(3);
+          assertThat(arrayValue.get(0)).isEqualTo("a");
+          assertThat(arrayValue.get(1)).isEqualTo(2);
+          assertThat(arrayValue.get(2)).isEqualTo(false);
         });
   }
 }

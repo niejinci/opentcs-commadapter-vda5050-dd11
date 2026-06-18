@@ -3,11 +3,13 @@
 package org.opentcs.commadapter.vehicle.vda5050.v2_0;
 
 import static java.util.Objects.requireNonNull;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTIONS_PARAM_ACTIONS;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_ACTION_DESCRIPTION;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_ACTION_ID;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_ACTION_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_BLOCKING_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_PARAM_PARAMETER_PATTERN;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTIONS_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_INSTANT_ACTION_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_DESTINATION_NODE_ACTION_BLOCKING_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_DESTINATION_NODE_ACTION_DESCRIPTION;
@@ -15,8 +17,11 @@ import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.S
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_DESTINATION_NODE_ACTION_TYPE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.CommAdapterMessages.SEND_ORDER_PARAM_PARAMETER_PATTERN;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.assistedinject.Assisted;
 import jakarta.inject.Inject;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,6 +31,7 @@ import java.util.regex.Pattern;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.Action;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.ActionParameter;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.common.BlockingType;
+import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.instantactions.InstantActions;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Edge;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Node;
 import org.opentcs.commadapter.vehicle.vda5050.v2_0.message.order.Order;
@@ -45,6 +51,7 @@ public class CommAdapterMessageMapper {
   private final MapValueExtractor mapValueExtractor;
   private final TCSObjectService objectService;
   private final NodeMapping nodeMapping;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   /**
    * Creates a new instance.
@@ -156,6 +163,36 @@ public class CommAdapterMessageMapper {
         SEND_INSTANT_ACTION_PARAM_BLOCKING_TYPE,
         SEND_INSTANT_ACTION_PARAM_PARAMETER_PATTERN
     );
+  }
+
+  /**
+   * Tries to map a {@link VehicleCommAdapterMessage} to an {@link InstantActions} payload.
+   *
+   * @param message The message to map.
+   * @return An {@link Optional} containing the mapped {@link InstantActions}, or an empty
+   * {@link Optional} if the message could not be mapped.
+   */
+  public Optional<InstantActions> toInstantActions(VehicleCommAdapterMessage message) {
+    if (!Objects.equals(message.getType(), SEND_INSTANT_ACTIONS_TYPE)) {
+      return Optional.empty();
+    }
+
+    String actionsJson = message.getParameters().get(SEND_INSTANT_ACTIONS_PARAM_ACTIONS);
+    if (actionsJson == null || actionsJson.isBlank()) {
+      return Optional.empty();
+    }
+
+    try {
+      List<Action> actions = objectMapper.readValue(
+          actionsJson,
+          new TypeReference<List<Action>>() {
+          }
+      );
+      return Optional.of(new InstantActions().setActions(actions));
+    }
+    catch (IOException exc) {
+      throw new IllegalArgumentException("Could not parse instant actions JSON input", exc);
+    }
   }
 
   private Optional<Action> toAction(
