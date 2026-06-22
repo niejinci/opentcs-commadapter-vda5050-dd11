@@ -214,7 +214,7 @@ public class MessageResponseMatcher {
     sendingAllowed = state.getOperatingMode() == OperatingMode.AUTOMATIC
         || state.getOperatingMode() == OperatingMode.SEMIAUTOMATIC;
 
-    Object currentRequest = requests.peek();
+    Object currentRequest = requests.peek();  // 获取但不移除头部 元素
     if (currentRequest == null) {
       return;
     }
@@ -232,7 +232,7 @@ public class MessageResponseMatcher {
     }
 
     if (requestAcknowledged(currentRequest, state)) {
-      requests.poll();
+      requests.poll();  // 获取并移除头部 元素
       if (currentRequest instanceof OrderAssociation) {
         OrderAssociation order = (OrderAssociation) currentRequest;
         LOG.debug("{}: Vehicle acknowledged order: {}", commAdapterName, order);
