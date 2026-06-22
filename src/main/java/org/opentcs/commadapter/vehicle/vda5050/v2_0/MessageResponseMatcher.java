@@ -57,6 +57,22 @@ public class MessageResponseMatcher {
    */
   private final long orderResendTimeoutMs;
   /**
+   * Whether instant actions may be resent while waiting for acknowledgement.
+   */
+  private final boolean instantActionsResendEnabled;
+  /**
+   * Minimum time to wait before resending unacknowledged instant actions, in milliseconds.
+   */
+  private final long instantActionsResendIntervalMs;
+  /**
+   * Maximum number of times an instant action request may be sent.
+   */
+  private final int instantActionsMaxSendAttempts;
+  /**
+   * Maximum time to wait for acknowledgement of instant actions, in milliseconds.
+   */
+  private final long instantActionsAckTimeoutMs;
+  /**
    * Provides the current time in milliseconds.
    */
   private final LongSupplier currentTimeMillis;
@@ -73,6 +89,14 @@ public class MessageResponseMatcher {
    * The timestamp at which {@link #lastSentRequest} was sent.
    */
   private long lastSentRequestTimestamp;
+  /**
+   * The timestamp at which the current instant actions request was sent for the first time.
+   */
+  private long firstInstantActionsSentTimestamp = -1;
+  /**
+   * The number of times the current instant actions request was sent.
+   */
+  private int instantActionsSendAttempts;
   /**
    * Flag indicating whether this comm adapter may currently send requests to the vehicle.
    * If false, all enqueued requests will stay in the queue until the flag becomes true.
@@ -142,6 +166,57 @@ public class MessageResponseMatcher {
         orderAcceptedCallback,
         maxIgnoredRejectionsCount,
         orderResendTimeoutMs,
+        false,
+        5000,
+        1,
+        30000,
+        System::currentTimeMillis
+    );
+  }
+
+  /**
+   * Creates a new OrderResponseMatcher.
+   *
+   * @param commAdapterName The name of the comm adapter
+   * @param sendOrderCallback The callback for sending the next order.
+   * @param sendInstantActionsCallback The callback for sending instant actions.
+   * @param orderAcceptedCallback The callback for when the order is accepted by the vehicle.
+   * @param maxIgnoredRejectionsCount The maximum number of consecutive state messages that
+   * indicate a rejection of the current order/message before we consider the rejection to be
+   * permanent and stop retrying.
+   * @param orderResendTimeoutMs Minimum interval before resending an unacknowledged order.
+   * @param instantActionsResendEnabled Whether instant actions may be resent.
+   * @param instantActionsResendIntervalMs Minimum interval before resending instant actions.
+   * @param instantActionsMaxSendAttempts Maximum number of send attempts for instant actions.
+   * @param instantActionsAckTimeoutMs Maximum time to wait for instant actions acknowledgement.
+   */
+  public MessageResponseMatcher(
+      @Nonnull
+      String commAdapterName,
+      @Nonnull
+      Consumer<Order> sendOrderCallback,
+      @Nonnull
+      Consumer<InstantActions> sendInstantActionsCallback,
+      @Nonnull
+      Consumer<OrderAssociation> orderAcceptedCallback,
+      int maxIgnoredRejectionsCount,
+      long orderResendTimeoutMs,
+      boolean instantActionsResendEnabled,
+      long instantActionsResendIntervalMs,
+      int instantActionsMaxSendAttempts,
+      long instantActionsAckTimeoutMs
+  ) {
+    this(
+        commAdapterName,
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        maxIgnoredRejectionsCount,
+        orderResendTimeoutMs,
+        instantActionsResendEnabled,
+        instantActionsResendIntervalMs,
+        instantActionsMaxSendAttempts,
+        instantActionsAckTimeoutMs,
         System::currentTimeMillis
     );
   }
@@ -160,6 +235,39 @@ public class MessageResponseMatcher {
       @Nonnull
       LongSupplier currentTimeMillis
   ) {
+    this(
+        commAdapterName,
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        maxIgnoredRejectionsCount,
+        orderResendTimeoutMs,
+        false,
+        5000,
+        1,
+        30000,
+        currentTimeMillis
+    );
+  }
+
+  MessageResponseMatcher(
+      @Nonnull
+      String commAdapterName,
+      @Nonnull
+      Consumer<Order> sendOrderCallback,
+      @Nonnull
+      Consumer<InstantActions> sendInstantActionsCallback,
+      @Nonnull
+      Consumer<OrderAssociation> orderAcceptedCallback,
+      int maxIgnoredRejectionsCount,
+      long orderResendTimeoutMs,
+      boolean instantActionsResendEnabled,
+      long instantActionsResendIntervalMs,
+      int instantActionsMaxSendAttempts,
+      long instantActionsAckTimeoutMs,
+      @Nonnull
+      LongSupplier currentTimeMillis
+  ) {
     this.commAdapterName = requireNonNull(commAdapterName, "commAdapterName");
     this.sendOrderCallback = requireNonNull(sendOrderCallback, "sendOrderCallback");
     this.sendInstantActionsCallback
@@ -167,6 +275,10 @@ public class MessageResponseMatcher {
     this.orderAcceptedCallback = requireNonNull(orderAcceptedCallback, "orderAcceptedCallback");
     this.maxIgnoredRejectionsCount = maxIgnoredRejectionsCount;
     this.orderResendTimeoutMs = Math.max(orderResendTimeoutMs, 0);
+    this.instantActionsResendEnabled = instantActionsResendEnabled;
+    this.instantActionsResendIntervalMs = Math.max(instantActionsResendIntervalMs, 0);
+    this.instantActionsMaxSendAttempts = Math.max(instantActionsMaxSendAttempts, 1);
+    this.instantActionsAckTimeoutMs = Math.max(instantActionsAckTimeoutMs, 0);
     this.currentTimeMillis = requireNonNull(currentTimeMillis, "currentTimeMillis");
   }
 
@@ -203,6 +315,7 @@ public class MessageResponseMatcher {
     consecutiveRejectionsCount = 0;
     lastSentRequest = null;
     lastSentRequestTimestamp = 0;
+    resetInstantActionsTracking();
   }
 
   public void onStateMessage(
@@ -241,7 +354,19 @@ public class MessageResponseMatcher {
       else if (currentRequest instanceof InstantActions) {
         InstantActions actions = (InstantActions) currentRequest;
         LOG.debug("{}: Vehicle acknowledged instant actions: {}", commAdapterName, actions);
+        resetInstantActionsTracking();
       }
+      sendNextOrder();
+    }
+    else if (instantActionsTimedOut(currentRequest)) {
+      LOG.warn(
+          "{}: Dropping unacknowledged instant actions after {} ms: {}",
+          commAdapterName,
+          instantActionsAckTimeoutMs,
+          currentRequest
+      );
+      requests.poll();
+      resetInstantActionsTracking();
       sendNextOrder();
     }
     else {
@@ -299,14 +424,23 @@ public class MessageResponseMatcher {
           request.getClass().getName()
       );
     }
-    lastSentRequest = request;
-    lastSentRequestTimestamp = currentTimeMillis.getAsLong();
+    onRequestSent(request);
   }
 
   private boolean requestResendAllowed(Object request) {
-    if (!(request instanceof OrderAssociation)
-        || orderResendTimeoutMs == 0
-        || !Objects.equals(request, lastSentRequest)) {
+    if (request instanceof OrderAssociation) {
+      return orderResendAllowed(request);
+    }
+    else if (request instanceof InstantActions) {
+      return instantActionsResendAllowed(request);
+    }
+    else {
+      return false;
+    }
+  }
+
+  private boolean orderResendAllowed(Object request) {
+    if (orderResendTimeoutMs == 0 || !Objects.equals(request, lastSentRequest)) {
       return true;
     }
 
@@ -322,6 +456,70 @@ public class MessageResponseMatcher {
         orderResendTimeoutMs
     );
     return false;
+  }
+
+  private boolean instantActionsResendAllowed(Object request) {
+    if (!Objects.equals(request, lastSentRequest)) {
+      return true;
+    }
+
+    if (!instantActionsResendEnabled) {
+      LOG.trace("{}: Not resending instant actions. Resending is disabled.", commAdapterName);
+      return false;
+    }
+
+    if (instantActionsSendAttempts >= instantActionsMaxSendAttempts) {
+      LOG.trace(
+          "{}: Not resending instant actions. Maximum send attempts reached: {}.",
+          commAdapterName,
+          instantActionsMaxSendAttempts
+      );
+      return false;
+    }
+
+    long elapsedMs = currentTimeMillis.getAsLong() - lastSentRequestTimestamp;
+    if (elapsedMs >= instantActionsResendIntervalMs) {
+      return true;
+    }
+
+    LOG.trace(
+        "{}: Not resending instant actions yet, last send was {} ms ago. Configured timeout: {} ms.",
+        commAdapterName,
+        elapsedMs,
+        instantActionsResendIntervalMs
+    );
+    return false;
+  }
+
+  private boolean instantActionsTimedOut(Object request) {
+    if (!(request instanceof InstantActions)
+        || instantActionsAckTimeoutMs == 0
+        || firstInstantActionsSentTimestamp < 0) {
+      return false;
+    }
+
+    return currentTimeMillis.getAsLong() - firstInstantActionsSentTimestamp
+        >= instantActionsAckTimeoutMs;
+  }
+
+  private void onRequestSent(Object request) {
+    long now = currentTimeMillis.getAsLong();
+
+    if (request instanceof InstantActions) {
+      if (!Objects.equals(request, lastSentRequest) || firstInstantActionsSentTimestamp < 0) {
+        firstInstantActionsSentTimestamp = now;
+        instantActionsSendAttempts = 0;
+      }
+      instantActionsSendAttempts++;
+    }
+
+    lastSentRequest = request;
+    lastSentRequestTimestamp = now;
+  }
+
+  private void resetInstantActionsTracking() {
+    firstInstantActionsSentTimestamp = -1;
+    instantActionsSendAttempts = 0;
   }
 
   private boolean orderAccepted(Order order, State state) {

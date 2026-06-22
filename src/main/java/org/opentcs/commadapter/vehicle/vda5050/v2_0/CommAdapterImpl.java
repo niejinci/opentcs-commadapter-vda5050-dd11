@@ -4,15 +4,21 @@ package org.opentcs.commadapter.vehicle.vda5050.v2_0;
 
 import static java.util.Objects.requireNonNull;
 import static org.opentcs.commadapter.vehicle.vda5050.common.PropertyExtractions.getProperty;
+import static org.opentcs.commadapter.vehicle.vda5050.common.PropertyExtractions.getPropertyBoolean;
 import static org.opentcs.commadapter.vehicle.vda5050.common.PropertyExtractions.getPropertyInteger;
 import static org.opentcs.commadapter.vehicle.vda5050.common.PropertyExtractions.getPropertyLong;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.MqttSetting.VERSION_MAJOR;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.MqttSetting.VERSION_MINOR;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.MqttSetting.VERSION_PATCH;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_ACTION_STATES;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_ERRORS_FATAL;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_ERRORS_WARNING;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INFORMATION_DEBUG;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INFORMATION_INFO;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INSTANT_ACTIONS_ACK_TIMEOUT_MS;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INSTANT_ACTIONS_MAX_SEND_ATTEMPTS;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_ENABLED;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_INTERVAL_MS;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_LENGTH_LOADED;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_LENGTH_UNLOADED;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_MAX_DISTANCE_IN_ADVANCE;
@@ -238,7 +244,11 @@ public class CommAdapterImpl
         this::sendInstantAction,
         this::orderAccepted,
         getPropertyInteger(PROPKEY_VEHICLE_MAX_IGNORED_REJECTIONS, vehicle).orElse(0),
-        configuration.orderResendTimeoutMs()
+        configuration.orderResendTimeoutMs(),
+        getPropertyBoolean(PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_ENABLED, vehicle).orElse(false),
+        getPropertyLong(PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_INTERVAL_MS, vehicle).orElse(5000L),
+        getPropertyInteger(PROPKEY_VEHICLE_INSTANT_ACTIONS_MAX_SEND_ATTEMPTS, vehicle).orElse(1),
+        getPropertyLong(PROPKEY_VEHICLE_INSTANT_ACTIONS_ACK_TIMEOUT_MS, vehicle).orElse(30000L)
     );
 
     getProcessModel().setTopicPrefix(mqttSetting.topicNamePrefix());
@@ -685,6 +695,7 @@ public class CommAdapterImpl
         PROPKEY_VEHICLE_PAUSED,
         StateMappings.toPausedPropertyValue(state)
     );
+    updateActionStatesProperty(state);
     getProcessModel().setState(toVehicleState(state));
     getProcessModel().setBoundingBox(
         getProcessModel().getBoundingBox().withLength(
@@ -695,6 +706,18 @@ public class CommAdapterImpl
     processVehicleOperatingMode(state);
 
     movementCommandManager.onStateMessage(state, this::onMovementCommandExecuted);
+  }
+
+  private void updateActionStatesProperty(State state) {
+    try {
+      getProcessModel().setProperty(
+          PROPKEY_VEHICLE_ACTION_STATES,
+          jsonBinder.toJson(state.getActionStates())
+      );
+    }
+    catch (Exception exc) {
+      LOG.warn("{}: Could not serialize VDA5050 action states.", getName(), exc);
+    }
   }
 
   private boolean reportedPositionRelevantForOutstandingCommands(

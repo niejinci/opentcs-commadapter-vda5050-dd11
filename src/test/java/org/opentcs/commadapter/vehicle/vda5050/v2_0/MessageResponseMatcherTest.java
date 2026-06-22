@@ -282,20 +282,21 @@ public class MessageResponseMatcherTest {
 
     messageResponseMatcher.onStateMessage(newState());
 
-    // The instant action is repeated if the vehicle does not reflect it as accepted in its state.
-    verify(sendInstantActionsCallback, times(2)).accept(action1);
+    // The instant action is not repeated by default if the vehicle does not reflect it as accepted
+    // in its state.
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
     verify(sendInstantActionsCallback, never()).accept(action2);
     verify(sendInstantActionsCallback, never()).accept(action3);
 
     messageResponseMatcher.onStateMessage(stateAcceptingInstantAction(action1));
 
-    verify(sendInstantActionsCallback, times(2)).accept(action1);
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
     verify(sendInstantActionsCallback, times(1)).accept(action2);
     verify(sendInstantActionsCallback, never()).accept(action3);
 
     messageResponseMatcher.onStateMessage(stateAcceptingInstantAction(action2));
 
-    verify(sendInstantActionsCallback, times(2)).accept(action1);
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
     verify(sendInstantActionsCallback, times(1)).accept(action2);
     verify(sendInstantActionsCallback, times(1)).accept(action3);
   }
@@ -322,29 +323,111 @@ public class MessageResponseMatcherTest {
 
     messageResponseMatcher.onStateMessage(newState());
 
-    // The cancelOrder is repeated if the vehicle does not reflect it as accepted in its state.
-    verify(sendInstantActionsCallback, times(2)).accept(action1);
+    // The cancelOrder is not repeated by default if the vehicle does not reflect it as accepted
+    // in its state.
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
     verify(sendInstantActionsCallback, never()).accept(action2);
     verify(sendInstantActionsCallback, never()).accept(action3);
 
     messageResponseMatcher.onStateMessage(stateAcceptingInstantAction(action1));
 
-    // The cancelOrder is repeated if the vehicle has accepted but not completed it yet.
-    verify(sendInstantActionsCallback, times(3)).accept(action1);
+    // The cancelOrder waits for completion before the next message, but is not repeated by default.
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
     verify(sendInstantActionsCallback, never()).accept(action2);
     verify(sendInstantActionsCallback, never()).accept(action3);
 
     messageResponseMatcher.onStateMessage(stateCompletingInstantAction(action1));
 
-    verify(sendInstantActionsCallback, times(3)).accept(action1);
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
     verify(sendInstantActionsCallback, times(1)).accept(action2);
     verify(sendInstantActionsCallback, never()).accept(action3);
 
     messageResponseMatcher.onStateMessage(stateCompletingInstantAction(action2));
 
-    verify(sendInstantActionsCallback, times(3)).accept(action1);
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
     verify(sendInstantActionsCallback, times(1)).accept(action2);
     verify(sendInstantActionsCallback, times(1)).accept(action3);
+  }
+
+  @Test
+  public void resendInstantActionsOnlyAfterConfiguredIntervalAndUntilMaximumAttempts() {
+    AtomicLong now = new AtomicLong();
+    MessageResponseMatcher throttledMessageResponseMatcher = new MessageResponseMatcher(
+        "test",
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        0,
+        1000,
+        true,
+        5000,
+        3,
+        0,
+        now::get
+    );
+    throttledMessageResponseMatcher.onStateMessage(newState());
+
+    InstantActions action = new InstantActions();
+    action.setActions(List.of(new Action(Pick.ACTION_TYPE, "action1", BlockingType.HARD)));
+
+    throttledMessageResponseMatcher.enqueueAction(action);
+    verify(sendInstantActionsCallback, times(1)).accept(action);
+
+    throttledMessageResponseMatcher.onStateMessage(newState());
+    verify(sendInstantActionsCallback, times(1)).accept(action);
+
+    now.addAndGet(4999);
+    throttledMessageResponseMatcher.onStateMessage(newState());
+    verify(sendInstantActionsCallback, times(1)).accept(action);
+
+    now.incrementAndGet();
+    throttledMessageResponseMatcher.onStateMessage(newState());
+    verify(sendInstantActionsCallback, times(2)).accept(action);
+
+    now.addAndGet(5000);
+    throttledMessageResponseMatcher.onStateMessage(newState());
+    verify(sendInstantActionsCallback, times(3)).accept(action);
+
+    now.addAndGet(5000);
+    throttledMessageResponseMatcher.onStateMessage(newState());
+    verify(sendInstantActionsCallback, times(3)).accept(action);
+  }
+
+  @Test
+  public void dropUnacknowledgedInstantActionsAfterTimeoutAndSendNextMessage() {
+    AtomicLong now = new AtomicLong();
+    MessageResponseMatcher timedMessageResponseMatcher = new MessageResponseMatcher(
+        "test",
+        sendOrderCallback,
+        sendInstantActionsCallback,
+        orderAcceptedCallback,
+        0,
+        1000,
+        false,
+        5000,
+        1,
+        30000,
+        now::get
+    );
+    timedMessageResponseMatcher.onStateMessage(newState());
+
+    InstantActions action1 = new InstantActions();
+    action1.setActions(List.of(new Action(Pick.ACTION_TYPE, "action1", BlockingType.HARD)));
+    InstantActions action2 = new InstantActions();
+    action2.setActions(List.of(new Action(Drop.ACTION_TYPE, "action2", BlockingType.HARD)));
+
+    timedMessageResponseMatcher.enqueueAction(action1);
+    timedMessageResponseMatcher.enqueueAction(action2);
+    verify(sendInstantActionsCallback, times(1)).accept(action1);
+    verify(sendInstantActionsCallback, never()).accept(action2);
+
+    now.addAndGet(29999);
+    timedMessageResponseMatcher.onStateMessage(newState());
+    verify(sendInstantActionsCallback, never()).accept(action2);
+
+    now.incrementAndGet();
+    timedMessageResponseMatcher.onStateMessage(newState());
+    verify(sendInstantActionsCallback, times(1)).accept(action2);
   }
 
   @ParameterizedTest

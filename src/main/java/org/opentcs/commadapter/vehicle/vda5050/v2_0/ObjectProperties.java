@@ -131,6 +131,30 @@ public interface ObjectProperties {
    */
   String PROPKEY_VEHICLE_PAUSED = "vda5050:paused";
   /**
+   * The key of the vehicle property containing the last action states reported by the vehicle.
+   */
+  String PROPKEY_VEHICLE_ACTION_STATES = "vda5050:actionStates";
+  /**
+   * The key of the vehicle property defining whether instant actions may be resent.
+   */
+  String PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_ENABLED
+      = "vda5050:instantActions.resendEnabled";
+  /**
+   * The key of the vehicle property defining the minimum interval before resending instant actions.
+   */
+  String PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_INTERVAL_MS
+      = "vda5050:instantActions.resendIntervalMs";
+  /**
+   * The key of the vehicle property defining how many times instant actions may be sent.
+   */
+  String PROPKEY_VEHICLE_INSTANT_ACTIONS_MAX_SEND_ATTEMPTS
+      = "vda5050:instantActions.maxSendAttempts";
+  /**
+   * The key of the vehicle property defining when unacknowledged instant actions time out.
+   */
+  String PROPKEY_VEHICLE_INSTANT_ACTIONS_ACK_TIMEOUT_MS
+      = "vda5050:instantActions.ackTimeoutMs";
+  /**
    * The key of the vehicle property containing the vehicle's recharge operation.
    */
   String PROPKEY_VEHICLE_RECHARGE_OPERATION = "vda5050:rechargeOperation";
