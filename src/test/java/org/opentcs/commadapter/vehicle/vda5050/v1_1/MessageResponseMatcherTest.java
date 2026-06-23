@@ -207,7 +207,7 @@ public class MessageResponseMatcherTest {
   }
 
   @Test
-  public void shouldNotSendWhenInManualModeAndOrderRejection() {
+  public void shouldSendInstantActionWhenInManualModeAndOrderRejection() {
     Order order = new Order("some-order", 0L, List.of(), List.of());
     InstantActions action = new InstantActions();
     State state = stateWithOperatingMode(OperatingMode.MANUAL);
@@ -216,7 +216,7 @@ public class MessageResponseMatcherTest {
     messageResponseMatcher.onStateMessage(state);
     messageResponseMatcher.enqueueAction(action);
 
-    verify(sendInstantActionsCallback, never()).accept(action);
+    verify(sendInstantActionsCallback, times(1)).accept(action);
   }
 
   @ParameterizedTest
@@ -389,6 +389,17 @@ public class MessageResponseMatcherTest {
     messageResponseMatcher.enqueueCommand(order1, dummyCommand);
 
     verify(sendOrderCallback, times(1)).accept(order1);
+  }
+
+  @ParameterizedTest
+  @EnumSource(value = OperatingMode.class, names = {"TEACHIN", "MANUAL", "SERVICE"})
+  public void shouldSendInstantActionsWhenNotInAutomaticModes(OperatingMode mode) {
+    messageResponseMatcher.onStateMessage(stateWithOperatingMode(mode));
+
+    InstantActions action = new InstantActions();
+    messageResponseMatcher.enqueueAction(action);
+
+    verify(sendInstantActionsCallback, times(1)).accept(action);
   }
 
   @Test
