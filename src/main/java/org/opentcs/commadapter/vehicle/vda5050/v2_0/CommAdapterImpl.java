@@ -19,12 +19,14 @@ import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROP
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INSTANT_ACTIONS_MAX_SEND_ATTEMPTS;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_ENABLED;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_INSTANT_ACTIONS_RESEND_INTERVAL_MS;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_LAST_STATE_AT;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_LENGTH_LOADED;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_LENGTH_UNLOADED;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_MAX_DISTANCE_IN_ADVANCE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_MAX_IGNORED_REJECTIONS;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_MAX_STEPS_BASE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_MIN_VISU_INTERVAL;
+import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_OPERATING_MODE;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_PAUSED;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.ObjectProperties.PROPKEY_VEHICLE_RECHARGE_OPERATION;
 import static org.opentcs.commadapter.vehicle.vda5050.v2_0.StateMappings.toLoadHandlingDevices;
@@ -694,6 +696,14 @@ public class CommAdapterImpl
     getProcessModel().setProperty(
         PROPKEY_VEHICLE_PAUSED,
         StateMappings.toPausedPropertyValue(state)
+    );
+    getProcessModel().setProperty(
+        PROPKEY_VEHICLE_OPERATING_MODE,
+        state.getOperatingMode().name()
+    );
+    getProcessModel().setProperty(
+        PROPKEY_VEHICLE_LAST_STATE_AT,
+        Instant.now().toString()
     );
     updateActionStatesProperty(state);
     getProcessModel().setState(toVehicleState(state));

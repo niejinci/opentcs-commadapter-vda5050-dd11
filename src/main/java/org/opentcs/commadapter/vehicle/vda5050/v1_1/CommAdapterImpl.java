@@ -13,12 +13,14 @@ import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROP
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_ERRORS_WARNING;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_INFORMATIONS_DEBUG;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_INFORMATIONS_INFO;
+import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_LAST_STATE_AT;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_LENGTH_LOADED;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_LENGTH_UNLOADED;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_MAX_DISTANCE_IN_ADVANCE;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_MAX_IGNORED_REJECTIONS;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_MAX_STEPS_BASE;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_MIN_VISU_INTERVAL;
+import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_OPERATING_MODE;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_PAUSED;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.ObjectProperties.PROPKEY_VEHICLE_RECHARGE_OPERATION;
 import static org.opentcs.commadapter.vehicle.vda5050.v1_1.StateMappings.toLoadHandlingDevices;
@@ -677,6 +679,14 @@ public class CommAdapterImpl
     getProcessModel().setProperty(
         PROPKEY_VEHICLE_PAUSED,
         StateMappings.toPausedPropertyValue(state)
+    );
+    getProcessModel().setProperty(
+        PROPKEY_VEHICLE_OPERATING_MODE,
+        state.getOperatingMode().name()
+    );
+    getProcessModel().setProperty(
+        PROPKEY_VEHICLE_LAST_STATE_AT,
+        Instant.now().toString()
     );
     getProcessModel().setState(toVehicleState(state));
     getProcessModel().setBoundingBox(

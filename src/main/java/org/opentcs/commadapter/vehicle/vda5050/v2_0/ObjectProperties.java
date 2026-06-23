@@ -131,6 +131,14 @@ public interface ObjectProperties {
    */
   String PROPKEY_VEHICLE_PAUSED = "vda5050:paused";
   /**
+   * The key of the vehicle property containing the vehicle's current operating mode.
+   */
+  String PROPKEY_VEHICLE_OPERATING_MODE = "vda5050:operatingMode";
+  /**
+   * The key of the vehicle property containing when the last state message was received.
+   */
+  String PROPKEY_VEHICLE_LAST_STATE_AT = "vda5050:lastStateAt";
+  /**
    * The key of the vehicle property containing the last action states reported by the vehicle.
    */
   String PROPKEY_VEHICLE_ACTION_STATES = "vda5050:actionStates";
