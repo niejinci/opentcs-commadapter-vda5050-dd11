@@ -45,6 +45,8 @@ import org.opentcs.commadapter.vehicle.vda5050.CommAdapterConfiguration.ConfigIn
 import org.opentcs.commadapter.vehicle.vda5050.CommAdapterConfiguration.ConfigOperatingMode;
 import org.opentcs.commadapter.vehicle.vda5050.common.DistanceInAdvanceController;
 import org.opentcs.commadapter.vehicle.vda5050.common.JsonBinder;
+import org.opentcs.commadapter.vehicle.vda5050.common.mqtt.ClientConnectionMeta;
+import org.opentcs.commadapter.vehicle.vda5050.common.mqtt.ClientConnectionMetadata;
 import org.opentcs.commadapter.vehicle.vda5050.common.mqtt.ConnectionEventListener;
 import org.opentcs.commadapter.vehicle.vda5050.common.mqtt.IncomingMessage;
 import org.opentcs.commadapter.vehicle.vda5050.common.mqtt.MqttClientManager;
@@ -94,6 +96,10 @@ public class CommAdapterImpl
    * This class's logger.
    */
   private static final Logger LOG = LoggerFactory.getLogger(CommAdapterImpl.class);
+  /**
+   * The attached vehicle.
+   */
+  private final Vehicle vehicle;
   /**
    * Maps movement commands from openTCS to the telegrams sent to the attached vehicle.
    */
@@ -208,6 +214,7 @@ public class CommAdapterImpl
             .orElse(DestinationOperations.CHARGE),
         kernelExecutor
     );
+    this.vehicle = requireNonNull(vehicle, "vehicle");
     this.mqttSetting = requireNonNull(mqttSetting, "mqttSetting");
     this.componentsFactory = requireNonNull(componentsFactory, "componentsFactory");
     this.minVisualizationInterval
@@ -282,6 +289,9 @@ public class CommAdapterImpl
     clientManager.subscribe(
         mqttSetting.visualizationTopicName(), mqttSetting.visualizationTopicQos(), this
     );
+    clientManager.subscribe(
+        ClientConnectionMetadata.TOPIC, QualityOfService.AT_LEAST_ONCE, this
+    );
 
     // The client manager may have already been connected to the broker prior to this adapter
     // instance being enabled. Therefore, we have to actively check the broker connection state.
@@ -302,6 +312,7 @@ public class CommAdapterImpl
     clientManager.unsubscribe(mqttSetting.connectionTopicName(), this);
     clientManager.unsubscribe(mqttSetting.stateTopicName(), this);
     clientManager.unsubscribe(mqttSetting.visualizationTopicName(), this);
+    clientManager.unsubscribe(ClientConnectionMetadata.TOPIC, this);
     clientManager.unregisterConnectionEventListener(this);
 
     // With unregistering from the client manager, we will no longer receive any update regarding
@@ -524,6 +535,18 @@ public class CommAdapterImpl
         LOG.warn("Cannot parse visualization message: {}", message.getMessage(), ex);
       }
     }
+    else if (Objects.equals(message.getTopic(), ClientConnectionMetadata.TOPIC)) {
+      try {
+        ClientConnectionMeta meta = jsonBinder.fromJson(
+            message.getMessage(),
+            ClientConnectionMeta.class
+        );
+        getExecutor().execute(() -> onClientConnectionMeta(meta));
+      }
+      catch (IllegalArgumentException ex) {
+        LOG.warn("Cannot parse client connection metadata: {}", message.getMessage(), ex);
+      }
+    }
     else {
       LOG.warn(
           "Incoming message on unhandled topic '{}': {}",
@@ -591,6 +614,62 @@ public class CommAdapterImpl
     getProcessModel().setCurrentConnection(message);
   }
 
+  private void onClientConnectionMeta(ClientConnectionMeta meta) {
+    if (!ClientConnectionMetadata.matchesVehicle(
+        meta,
+        vehicle,
+        mqttSetting.vehicleManufacturer(),
+        mqttSetting.vehicleSerialNumber(),
+        mqttSetting.topicNamePrefix()
+    )) {
+      return;
+    }
+
+    if (ClientConnectionMetadata.isConnectedEvent(meta)) {
+      ClientConnectionMetadata.extractIp(meta).ifPresentOrElse(
+          ip -> {
+            getProcessModel().setProperty(ClientConnectionMetadata.PROPKEY_VEHICLE_IP, ip);
+            getProcessModel().setProperty(ClientConnectionMetadata.PROPKEY_RUNTIME_CLIENT_IP, ip);
+            updateClientConnectionMetaProperties(meta);
+            LOG.info("{}: Updated runtime AGV IP to {}", getName(), ip);
+          },
+          () -> LOG.warn(
+              "{}: Ignoring client metadata without usable peerName: {}",
+              getName(),
+              meta
+          )
+      );
+    }
+    else if (ClientConnectionMetadata.isDisconnectedEvent(meta)) {
+      // Keep the last known IP so a short disconnect/reconnect cycle does not disable the
+      // frontend vehicle-home shortcut. The event timestamp records that the value may be stale.
+      updateClientConnectionMetaProperties(meta);
+      LOG.info("{}: Recorded AGV MQTT disconnect metadata: {}", getName(), meta);
+    }
+  }
+
+  private void updateClientConnectionMetaProperties(ClientConnectionMeta meta) {
+    getProcessModel().setProperty(
+        ClientConnectionMetadata.PROPKEY_RUNTIME_CLIENT_PEER_NAME,
+        meta.getPeerName() == null ? "" : meta.getPeerName()
+    );
+    getProcessModel().setProperty(
+        ClientConnectionMetadata.PROPKEY_RUNTIME_CLIENT_ID,
+        meta.getClientId() == null ? "" : meta.getClientId()
+    );
+    getProcessModel().setProperty(
+        ClientConnectionMetadata.PROPKEY_RUNTIME_CLIENT_EVENT,
+        meta.getEvent() == null ? "" : meta.getEvent()
+    );
+    getProcessModel().setProperty(
+        ClientConnectionMetadata.PROPKEY_RUNTIME_CLIENT_EVENT_AT,
+        ClientConnectionMetadata.eventTimestamp(meta)
+    );
+    getProcessModel().setProperty(
+        ClientConnectionMetadata.PROPKEY_RUNTIME_CLIENT_IP_SOURCE,
+        "emqx"
+    );
+  }
   private void onStateMessage(State state) {
     LOG.debug("{}: Received a new state message: {}", getName(), state);
     getProcessModel().setVehicleIdle(false);
